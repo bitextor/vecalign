@@ -38,11 +38,13 @@ conda activate vecalign
 # Install required packages
 conda install -y -c anaconda cython
 conda install -y -c anaconda numpy
+# Pip packages
+pip install -r requirements.txt
 ```
 
 Note that Vecalign contains cython code, but there is no need to build it manually as it is compiled automatically by [pyximport](https://github.com/cython/cython/tree/master/pyximport).
 
-### Run Vecalign (using provided embeddings)
+### Run Vecalign
 ```
 ./vecalign.py --alignment_max_size 8 --src bleualign_data/dev.de --tgt bleualign_data/dev.fr \
    --src_embed bleualign_data/overlaps.de bleualign_data/overlaps.de.emb  \
@@ -135,7 +137,11 @@ $LASER/tasks/embed/embed.sh bleualign_data/overlaps.fr fr bleualign_data/overlap
 $LASER/tasks/embed/embed.sh bleualign_data/overlaps.de de bleualign_data/overlaps.de.emb
 ```
 
-Note that LASER will not overwrite an embedding file if it exsts, so you may need to run first `rm bleualign_data/overlaps.fr.emb bleualign_data/overlaps.de.emb`.
+Note that LASER will not overwrite an embedding file if it exists, so you may need to run first `rm bleualign_data/overlaps.fr.emb bleualign_data/overlaps.de.emb`.
+
+By default, the embeddings will be generated **automatically** when running `./vecalign.py` if the provided embeddings do not exist. In this case, these embeddings will be generated using [Sentence Transformers](https://github.com/UKPLab/sentence-transformers).
+
+When using different embeddings, the dimensionality will be needed to be modified acording to the tool. In the case of LASER, the dimensionality is 1024, but in the case of Sentence Transformers is 768 (check out the option `--embeddings_dim` of `vecalign.py`).
 
 ### Publications
 

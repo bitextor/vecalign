@@ -47,29 +47,46 @@ def yield_overlaps(lines, num_overlaps):
             yield out_line2
 
 
-def read_in_embeddings(text_file, embed_file):
+def read_in_embeddings(text_file, embed_file, dim=768):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
        and a numpy array of the embeddings
     """
     sent2line = dict()
+
     with open(text_file, 'rt', encoding="utf-8") as fin:
         for ii, line in enumerate(fin):
             if line.strip() in sent2line:
                 raise Exception('got multiple embeddings for the same line')
             sent2line[line.strip()] = ii
 
-    line_embeddings = np.fromfile(embed_file, dtype=np.float32, count=-1)
-    if line_embeddings.size == 0:
+    embed_fd = open(embed_file, "rb")
+    embeddings = []
+
+    try:
+        for idx in range(len(sent2line)):
+            embedding = np.load(embed_fd)
+
+            embeddings.extend(embedding)
+    except ValueError as e:
+        # We have finished reading embeddings
+        pass
+
+    embed_fd.close()
+
+    embeddings = np.array(embeddings, dtype=np.float32)
+    embedding_size = embeddings.size // len(sent2line)
+
+    if embeddings.size == 0:
         raise Exception('Got empty embedding file')
 
-    laser_embedding_size = line_embeddings.size // len(sent2line)  # currently hardcoded to 1024
-    if laser_embedding_size != 1024:
-        logger.warning('expected an embedding size of 1024, got %s', laser_embedding_size)
-    logger.info('laser_embedding_size determined to be %d', laser_embedding_size)
-    line_embeddings.resize(line_embeddings.shape[0] // laser_embedding_size, laser_embedding_size)
-    return sent2line, line_embeddings
+    if embedding_size != dim:
+        logger.warning('expected an embedding size of %d, got %d', dim, embedding_size)
+
+    logger.info('embedding_size determined to be %d', embedding_size)
+
+    return sent2line, embeddings
 
 
 def make_doc_embedding(sent2line, line_embeddings, lines, num_overlaps):

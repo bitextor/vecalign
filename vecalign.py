@@ -21,6 +21,7 @@ import logging
 import pickle
 from math import ceil
 from random import seed as seed
+import os
 
 import numpy as np
 
@@ -84,6 +85,14 @@ def _main():
     parser.add_argument('--debug_save_stack', type=str,
                         help='Write stack to pickle file for debug purposes')
 
+    # Embeddings
+    parser.add_argument('--embeddings_dim', type=int, default=768,
+                        help='Dimension of the embeddings. The default value is 768')
+    parser.add_argument('--embeddings_batch_size', type=int, default=32,
+                        help='Batch size for GPU when generating embeddings. The default value is 32')
+    parser.add_argument('--embeddings_model', type=str, default="LaBSE",
+                        help='Model which will be used to generate the embeddings with sentence_transformers. The default value is LaBSE')
+
     args = parser.parse_args()
 
     if len(args.src) != len(args.tgt):
@@ -101,8 +110,25 @@ def _main():
         logger.warning('Alignment_max_size < 2. Increasing to 2 so that 1-1 alignments will be considered')
         args.alignment_max_size = 2
 
-    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1])
-    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1])
+    # Generate embeddings?
+    if (not os.path.isfile(args.src_embed[1]) or not os.path.isfile(args.tgt_embed[1])):
+        import embeddings
+
+        if not os.path.isfile(args.src_embed[1]):
+            # src embeddings do not exist -> generate
+            logger.info("Generating src embeddings")
+
+            embeddings.generate_embeddings(args.src_embed[0], args.src_embed[1], gpu_batch_size=args.embeddings_batch_size,
+                                           model_st=args.embeddings_model)
+        if not os.path.isfile(args.tgt_embed[1]):
+            # tgr embeddings do not exist -> generate
+            logger.info("Generating trg embeddings")
+
+            embeddings.generate_embeddings(args.tgt_embed[0], args.tgt_embed[1], gpu_batch_size=args.embeddings_batch_size,
+                                           model_st=args.embeddings_model)
+
+    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim)
+    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim)
 
     width_over2 = ceil(args.alignment_max_size / 2.0) + args.search_buffer_size
 
