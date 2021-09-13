@@ -85,6 +85,18 @@ def _main():
     parser.add_argument('--debug_save_stack', type=str,
                         help='Write stack to pickle file for debug purposes')
 
+    parser.add_argument('--threshold', type=float, default=None,
+                        help='Threshold which will be applied to the obtained scores of the alignment. All matches whose score is lower than the provided threshold will be discarded')
+
+    parser.add_argument('--urls-format', action='store_true',
+                        help='URLs will be used for the results: src_URLs<tab>tgt_URLs<tab>src_sentences<tab>tgt_sentences[<tab>score]')
+
+    parser.add_argument('--src-urls', type=str,
+                        help='Source file of urls to print the results')
+
+    parser.add_argument('--tgt-urls', type=str,
+                        help='Target file of urls to print the results')
+
     # Embeddings
     parser.add_argument('--embeddings_dim', type=int, default=768,
                         help='Dimension of the embeddings. The default value is 768')
@@ -102,12 +114,17 @@ def _main():
         if len(args.gold_alignment) != len(args.src):
             raise Exception('number of gold alignment files, if provided, must match number of source and target files')
 
+    if (args.urls_format and (args.src_urls is None or args.tgt_urls is None)):
+        raise Exception('if you use --urls-format, you need to provide --src-urls and --tgt-urls')
+    if (args.urls_format and (not os.path.isfile(args.src_urls) or not os.path.isfile(args.tgt_urls))):
+        raise Exception('--src-urls and --tgt-urls must exist')
+
     if args.verbose:
         import logging
         logger.setLevel(logging.INFO)
 
     if args.alignment_max_size < 2:
-        logger.warning('Alignment_max_size < 2. Increasing to 2 so that 1-1 alignments will be considered')
+        logger.warning('alignment_max_size < 2: increasing to 2 so that 1-1 alignments will be considered')
         args.alignment_max_size = 2
 
     # Generate embeddings?
@@ -155,8 +172,22 @@ def _main():
                          costs_sample_size=args.costs_sample_size,
                          num_samps_for_norm=args.num_samps_for_norm)
 
+        # urls format
+        src_urls_lines = None if not args.urls_format else list(map(lambda line: line.strip()[:10000], open(args.src_urls, 'rt', encoding="utf-8").readlines()))
+        tgt_urls_lines = None if not args.urls_format else list(map(lambda line: line.strip()[:10000], open(args.tgt_urls, 'rt', encoding="utf-8").readlines()))
+
+        if (src_urls_lines is not None and tgt_urls_lines is not None):
+            # check that we have the expected number of lines
+
+            if len(src_urls_lines) != len(src_lines):
+                raise Exception('different number of lines in src lines and urls')
+            if len(tgt_urls_lines) != len(tgt_lines):
+                raise Exception('different number of lines in tgt lines and urls')
+
         # write final alignments to stdout
-        print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'])
+        print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'], threshold=args.threshold,
+                         urls_format=args.urls_format, src_lines=src_lines, tgt_lines=tgt_lines,
+                         src_urls=src_urls_lines, tgt_urls=tgt_urls_lines)
 
         test_alignments.append(stack[0]['final_alignments'])
         stack_list.append(stack)

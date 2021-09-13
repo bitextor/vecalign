@@ -161,13 +161,39 @@ def read_alignments(fin):
     return alignments
 
 
-def print_alignments(alignments, scores=None, file=sys.stdout):
+def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, urls_format=False,
+                     src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None):
     if scores is not None:
         for (x, y), s in zip(alignments, scores):
-            print('%s:%s:%.6f' % (x, y, s), file=file)
+            if (threshold is not None and s < threshold):
+                continue
+            if (len(x) == 0 or len(y) == 0):
+                log_data = ('src', x, 'tgt', y) if len(x) == 0 else ('tgt', y, 'src', x)
+                logger.info('alignment not taken into account since %s sentence (%s) does not match with %s sentence (%s)',
+                            log_data[0], log_data[1], log_data[2], log_data[3])
+
+                continue
+
+            if urls_format:
+                x_lines = ' '.join([preprocess_line(src_lines[i]) for i in x])
+                x_urls = ' '.join([src_urls[i] for i in x])
+                y_lines = ' '.join([preprocess_line(tgt_lines[i]) for i in y])
+                y_urls = ' '.join([tgt_urls[i] for i in y])
+
+                print('%s\t%s\t%s\t%s\t%.6f' % (x_urls, y_urls, x_lines, y_lines, s), file=file)
+            else:
+                print('%s:%s:%.6f' % (x, y, s), file=file)
     else:
         for x, y in alignments:
-            print('%s:%s' % (x, y), file=file)
+            if urls_format:
+                x_lines = ' '.join([preprocess_line(src_lines[i]) for i in x])
+                x_urls = ' '.join([src_urls[i] for i in x])
+                y_lines = ' '.join([preprocess_line(tgt_lines[i]) for i in y])
+                y_urls = ' '.join([tgt_urls[i] for i in y])
+
+                print('%s\t%s\t%s\t%s' % (x_urls, y_urls, x_lines, y_lines), file=file)
+            else:
+                print('%s:%s' % (x, y), file=file)
 
 
 class DeletionKnob(object):
