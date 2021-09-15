@@ -53,28 +53,28 @@ Note that Vecalign contains cython code, but there is no need to build it manual
 
 Alignments are written to stdout:
 ```
-[0]:[0]:0.156006
-[1]:[1]:0.160997
-[2]:[2]:0.217155
-[3]:[3]:0.361439
-[4]:[4]:0.346332
-[5]:[5]:0.211873
-[6]:[6, 7, 8]:0.507506
-[7]:[9]:0.252747
-[8, 9]:[10, 11, 12]:0.139594
-[10, 11]:[13]:0.273751
-[12]:[14]:0.165397
-[13]:[15, 16, 17]:0.436312
-[14]:[18, 19, 20, 21]:0.734142
-[]:[22]:0.000000
-[]:[23]:0.000000
-[]:[24]:0.000000
-[]:[25]:0.000000
-[15]:[26, 27, 28]:0.840094
+0:[0]:[0]:0.156006
+0:[1]:[1]:0.160997
+0:[2]:[2]:0.217155
+0:[3]:[3]:0.361439
+0:[4]:[4]:0.346332
+0:[5]:[5]:0.211873
+0:[6]:[6, 7, 8]:0.507506
+0:[7]:[9]:0.252747
+0:[8, 9]:[10, 11, 12]:0.139594
+0:[10, 11]:[13]:0.273751
+0:[12]:[14]:0.165397
+0:[13]:[15, 16, 17]:0.436312
+0:[14]:[18, 19, 20, 21]:0.734142
+0:[]:[22]:0.000000
+0:[]:[23]:0.000000
+0:[]:[24]:0.000000
+0:[]:[25]:0.000000
+0:[15]:[26, 27, 28]:0.840094
 ...
 ```
 
-The first two entries are the source and target sentence indexes for each alignment, respectively. 
+The first entry is the source or target document position provided in the arguments. The following two entries are the source and target sentence indexes for each alignment, respectively. 
 The third entry in each line is the sentence alignment cost computed by Vecalign. 
 Note that this cost includes normalization but does *not* include the penalties terms for containing more than one sentence. 
 Note that the alignment cost is set to zero for insertions/deletions. 

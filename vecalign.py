@@ -22,6 +22,8 @@ import pickle
 from math import ceil
 from random import seed as seed
 import os
+import sys
+import base64
 
 import numpy as np
 
@@ -34,9 +36,53 @@ logger.addHandler(consoleHandler)
 
 from dp_utils import make_alignment_types, print_alignments, read_alignments, \
     read_in_embeddings, make_doc_embedding, vecalign
-
 from score import score_multiple, log_final_scores
+import overlap
+import embeddings
 
+def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
+                                             model_st="LaBSE", gpu_batch_size=32):
+    if (os.path.isfile(embedding_file) and not os.path.isfile(overlapping_file)):
+        logger.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
+                       'generated, and likely the embedding file will not be compatible (this might lead to wrong results)',
+                       label, label)
+
+    # Generate overlapping files?
+    if not os.path.isfile(overlapping_file):
+        if not os.path.isfile(overlapping_file):
+            # overlapping file does not exist -> generate
+            logger.info("Generating %s overlapping file", label)
+
+            overlap.overlap(overlapping_file, list_of_doc_paths, num_overlaps)
+
+    # Generate embeddings?
+    if not os.path.isfile(embedding_file):
+        if not os.path.isfile(embedding_file):
+            # embeddings do not exist -> generate
+            logger.info("Generating %s embeddings", label)
+
+            embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st)
+
+def process_src_and_tgt_files(src, tgt):
+    if src[0] == "-":
+        for line in sys.stdin:
+            line = line.strip().split("\t")
+
+            if len(line) != 2:
+                raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64')
+
+            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
+            src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
+            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
+            tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
+
+            yield src_lines, tgt_lines
+    else:
+        for src_file, tgt_file in zip(src, tgt):
+            src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
+            tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
+
+            yield src_lines, tgt_lines
 
 def _main():
     # make runs consistent
@@ -47,10 +93,10 @@ def _main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('-s', '--src', type=str, nargs='+', required=True,
-                        help='preprocessed source file to align')
+                        help='preprocessed source file to align. If "-" is provided, stdin will be used, also for --tgt (entries format: src_doc_base64<tab>tgt_doc_base64)')
 
     parser.add_argument('-t', '--tgt', type=str, nargs='+', required=True,
-                        help='preprocessed target file to align')
+                        help='preprocessed target file to align. If "-" is provided, stdin will be used, also for --src (entries format: src_doc_base64<tab>tgt_doc_base64)')
 
     parser.add_argument('-g', '--gold_alignment', type=str, nargs='+', required=False,
                         help='preprocessed target file to align')
@@ -86,15 +132,15 @@ def _main():
                         help='Write stack to pickle file for debug purposes')
 
     parser.add_argument('--threshold', type=float, default=None,
-                        help='Threshold which will be applied to the obtained scores of the alignment. All matches whose score is lower than the provided threshold will be discarded')
+                        help='Threshold which will be applied to the obtained scores of the alignment. All matches whose score is lower than the provided threshold will be discarded. The threshold is only applied to the printed results (it is not applied to the evaluation)')
 
-    parser.add_argument('--urls-format', action='store_true',
+    parser.add_argument('--urls_format', action='store_true',
                         help='URLs will be used for the results: src_URLs<tab>tgt_URLs<tab>src_sentences<tab>tgt_sentences[<tab>score]')
 
-    parser.add_argument('--src-urls', type=str,
+    parser.add_argument('--src_urls', type=str, nargs='+',
                         help='Source file of urls to print the results')
 
-    parser.add_argument('--tgt-urls', type=str,
+    parser.add_argument('--tgt_urls', type=str, nargs='+',
                         help='Target file of urls to print the results')
 
     # Embeddings
@@ -107,17 +153,37 @@ def _main():
 
     args = parser.parse_args()
 
+    docs_provided_via_stdin = False
+
+    if (args.src[0] == "-" and args.tgt[0] == "-"):
+        # Docs are going to ve provided via stdin
+        logger.info('Reading documents from stdin')
+
+        docs_provided_via_stdin = True
+
+        # Remove extra args
+        args.src = args.src[:1]
+        args.tgt = args.tgt[:1]
+
+        if (not os.path.isfile(args.src_embed[0]) or not os.path.isfile(args.tgt_embed[0])):
+            raise Exception('if --src and --tgt are going to be provided via stdin, src and tgt overlapping files must exist')
+
     if len(args.src) != len(args.tgt):
         raise Exception('number of source files must match number of target files')
 
     if args.gold_alignment is not None:
-        if len(args.gold_alignment) != len(args.src):
+        if (not docs_provided_via_stdin and len(args.gold_alignment) != len(args.src)):
             raise Exception('number of gold alignment files, if provided, must match number of source and target files')
 
     if (args.urls_format and (args.src_urls is None or args.tgt_urls is None)):
         raise Exception('if you use --urls-format, you need to provide --src-urls and --tgt-urls')
-    if (args.urls_format and (not os.path.isfile(args.src_urls) or not os.path.isfile(args.tgt_urls))):
-        raise Exception('--src-urls and --tgt-urls must exist')
+    if args.urls_format:
+        if (not docs_provided_via_stdin and (len(args.src) != len(args.src_urls) or len(args.tgt) != len(args.tgt_urls))):
+            raise Exception('number of files must match number of URLs files')
+
+        for src_url, tgt_url in zip(args.src_urls, args.tgt_urls):
+            if (not os.path.isfile(src_url) or not os.path.isfile(tgt_url)):
+                raise Exception('--src-urls and --tgt-urls must exist')
 
     if args.verbose:
         import logging
@@ -127,23 +193,13 @@ def _main():
         logger.warning('alignment_max_size < 2: increasing to 2 so that 1-1 alignments will be considered')
         args.alignment_max_size = 2
 
-    # Generate embeddings?
-    if (not os.path.isfile(args.src_embed[1]) or not os.path.isfile(args.tgt_embed[1])):
-        import embeddings
+    # Generate overlapping files and/or embeddings?
+    generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size,
+                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size)
+    generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size,
+                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size)
 
-        if not os.path.isfile(args.src_embed[1]):
-            # src embeddings do not exist -> generate
-            logger.info("Generating src embeddings")
-
-            embeddings.generate_embeddings(args.src_embed[0], args.src_embed[1], gpu_batch_size=args.embeddings_batch_size,
-                                           model_st=args.embeddings_model)
-        if not os.path.isfile(args.tgt_embed[1]):
-            # tgr embeddings do not exist -> generate
-            logger.info("Generating trg embeddings")
-
-            embeddings.generate_embeddings(args.tgt_embed[0], args.tgt_embed[1], gpu_batch_size=args.embeddings_batch_size,
-                                           model_st=args.embeddings_model)
-
+    # Load embeddings
     src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim)
     tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim)
 
@@ -151,13 +207,14 @@ def _main():
 
     test_alignments = []
     stack_list = []
-    for src_file, tgt_file in zip(args.src, args.tgt):
-        logger.info('Aligning src="%s" to tgt="%s"', src_file, tgt_file)
 
-        src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
+    for idx, (src_lines, tgt_lines) in enumerate(process_src_and_tgt_files(args.src, args.tgt)):
+        if docs_provided_via_stdin:
+            logger.info('Aligning documents pair #%d', idx)
+        else:
+            logger.info('Aligning src="%s" to tgt="%s"', args.src[idx], args.tgt[idx])
+
         vecs0 = make_doc_embedding(src_sent2line, src_line_embeddings, src_lines, args.alignment_max_size)
-
-        tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
         vecs1 = make_doc_embedding(tgt_sent2line, tgt_line_embeddings, tgt_lines, args.alignment_max_size)
 
         final_alignment_types = make_alignment_types(args.alignment_max_size)
@@ -173,26 +230,35 @@ def _main():
                          num_samps_for_norm=args.num_samps_for_norm)
 
         # urls format
-        src_urls_lines = None if not args.urls_format else list(map(lambda line: line.strip()[:10000], open(args.src_urls, 'rt', encoding="utf-8").readlines()))
-        tgt_urls_lines = None if not args.urls_format else list(map(lambda line: line.strip()[:10000], open(args.tgt_urls, 'rt', encoding="utf-8").readlines()))
+        src_urls_lines = None
+        tgt_urls_lines = None
 
-        if (src_urls_lines is not None and tgt_urls_lines is not None):
+        if args.urls_format:
+            if docs_provided_via_stdin:
+                if (idx >= len(args.src_urls) or idx >= len(args.tgt_urls)):
+                    raise Exception('number of files must match number of URLs files')
+
+            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(args.src_urls[idx], 'rt', encoding="utf-8").readlines()))
+            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(args.tgt_urls[idx], 'rt', encoding="utf-8").readlines()))
+
             # check that we have the expected number of lines
-
             if len(src_urls_lines) != len(src_lines):
-                raise Exception('different number of lines in src lines and urls')
+                raise Exception(f'different number of lines in src lines and urls: {len(src_lines)} vs {len(src_urls_lines)} (idx {idx})')
             if len(tgt_urls_lines) != len(tgt_lines):
-                raise Exception('different number of lines in tgt lines and urls')
+                raise Exception(f'different number of lines in tgt lines and urls: {len(tgt_lines)} vs {len(tgt_urls_lines)} (idx {idx})')
 
         # write final alignments to stdout
         print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'], threshold=args.threshold,
                          urls_format=args.urls_format, src_lines=src_lines, tgt_lines=tgt_lines,
-                         src_urls=src_urls_lines, tgt_urls=tgt_urls_lines)
+                         src_urls=src_urls_lines, tgt_urls=tgt_urls_lines, doc_idx=idx)
 
         test_alignments.append(stack[0]['final_alignments'])
         stack_list.append(stack)
 
     if args.gold_alignment is not None:
+        if (docs_provided_via_stdin and idx + 1 != len(args.gold_alignment)):
+            raise Exception('number of gold alignment files, if provided, must match number of source and target files')
+
         gold_list = [read_alignments(x) for x in args.gold_alignment]
         res = score_multiple(gold_list=gold_list, test_list=test_alignments)
         log_final_scores(res)

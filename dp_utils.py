@@ -79,10 +79,10 @@ def read_in_embeddings(text_file, embed_file, dim=768):
     embedding_size = embeddings.size // len(sent2line)
 
     if embeddings.size == 0:
-        raise Exception('Got empty embedding file')
+        raise Exception('got empty embedding file')
 
     if embedding_size != dim:
-        logger.warning('expected an embedding size of %d, got %d', dim, embedding_size)
+        raise Exception('expected an embedding size of %d, got %d', dim, embedding_size)
 
     logger.info('embedding_size determined to be %d', embedding_size)
 
@@ -103,15 +103,21 @@ def make_doc_embedding(sent2line, line_embeddings, lines, num_overlaps):
 
     for ii, overlap in enumerate(range(1, num_overlaps + 1)):
         for jj, out_line in enumerate(layer(lines, overlap)):
+            if overlap == 1:
+                # TODO we can reuse previously generated embeddings (if provided)
+                pass
+
             try:
                 line_id = sent2line[out_line]
             except KeyError:
-                logger.warning('Failed to find overlap=%d line "%s". Will use random vector.', overlap, out_line)
+                logger.warning('Failed to find overlap=%d line "%s": will use a random vector', overlap, out_line)
                 line_id = None
 
             if line_id is not None:
                 vec = line_embeddings[line_id]
             else:
+                # Generate random embedding
+
                 vec = np.random.random(vecsize) - 0.5
                 vec = vec / np.linalg.norm(vec)
 
@@ -162,14 +168,14 @@ def read_alignments(fin):
 
 
 def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, urls_format=False,
-                     src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None):
+                     src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None, doc_idx=None):
     if scores is not None:
         for (x, y), s in zip(alignments, scores):
             if (threshold is not None and s < threshold):
                 continue
             if (len(x) == 0 or len(y) == 0):
                 log_data = ('src', x, 'tgt', y) if len(x) == 0 else ('tgt', y, 'src', x)
-                logger.info('alignment not taken into account since %s sentence (%s) does not match with %s sentence (%s)',
+                logger.debug('alignment not taken into account since %s sentence (%s) does not match with %s sentence (%s)',
                             log_data[0], log_data[1], log_data[2], log_data[3])
 
                 continue
@@ -182,7 +188,10 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
                 print('%s\t%s\t%s\t%s\t%.6f' % (x_urls, y_urls, x_lines, y_lines, s), file=file)
             else:
-                print('%s:%s:%.6f' % (x, y, s), file=file)
+                if doc_idx is not None:
+                    print('%d:%s:%s:%.6f' % (doc_idx, x, y, s), file=file)
+                else:
+                    print('%s:%s:%.6f' % (x, y, s), file=file)
     else:
         for x, y in alignments:
             if urls_format:
@@ -193,7 +202,10 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
                 print('%s\t%s\t%s\t%s' % (x_urls, y_urls, x_lines, y_lines), file=file)
             else:
-                print('%s:%s' % (x, y), file=file)
+                if doc_idx is not None:
+                    print('%d:%s:%s' % (doc_idx, x, y), file=file)
+                else:
+                    print('%s:%s' % (x, y), file=file)
 
 
 class DeletionKnob(object):

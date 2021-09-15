@@ -16,45 +16,72 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-
+import sys
+import base64
 import argparse
 
 from dp_utils import yield_overlaps
 
 
-def go(output_file, input_files, num_overlaps):
+def overlap(output_file, input_files, num_overlaps):
     output = set()
-    for fin in input_files:
-        lines = open(fin, 'rt', encoding="utf-8").readlines()
-        for out_line in yield_overlaps(lines, num_overlaps):
-            output.add(out_line)
+
+    if input_files[0] == "-":
+        # Read from stdin
+
+        for lines in sys.stdin:
+            lines = lines.strip()
+            lines = base64.b64decode(lines).decode("utf-8").split("\n")
+            lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), lines)))
+
+            for out_line in yield_overlaps(lines, num_overlaps):
+                output.add(out_line)
+    else:
+        for fin in [input_files] if not isinstance(input_files, list) else input_files:
+            lines = open(fin, 'rt', encoding="utf-8").readlines()
+
+            for out_line in yield_overlaps(lines, num_overlaps):
+                output.add(out_line)
 
     # for reproducibility
     output = list(output)
     output.sort()
 
-    with open(output_file, 'wt', encoding="utf-8") as fout:
+    if output_file is None:
+        pass
+    elif output_file == "-":
         for line in output:
-            fout.write(line + '\n')
+            print(line)
+    else:
+        with open(output_file, 'wt', encoding="utf-8") as fout:
+            for line in output:
+                fout.write(line + '\n')
+
+    return output
 
 
 def _main():
     parser = argparse.ArgumentParser('Create text file containing overlapping sentences.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-i', '--inputs', type=str, nargs='+',
-                        help='input text file(s).')
+    parser.add_argument('-i', '--inputs', type=str, nargs='+', required=True,
+                        help='input text file(s). If "-" is provided, stdin will be used (entries format: doc_base64)')
 
-    parser.add_argument('-o', '--output', type=str,
-                        help='output text file containing overlapping sentneces')
+    parser.add_argument('-o', '--output', type=str, default=None,
+                        help='output text file containing overlapping sentences. If "-" is provided, stdout will be used')
 
     parser.add_argument('-n', '--num_overlaps', type=int, default=4,
                         help='Maximum number of allowed overlaps.')
 
     args = parser.parse_args()
-    go(output_file=args.output,
-       num_overlaps=args.num_overlaps,
-       input_files=args.inputs)
+
+    if args.inputs[0] == "-":
+        # Remove extra args
+        args.inputs = args.inputs[:1]
+
+    overlap(output_file=args.output,
+            num_overlaps=args.num_overlaps,
+            input_files=args.inputs)
 
 
 if __name__ == '__main__':
