@@ -63,9 +63,28 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
 
             embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st)
 
-def process_src_and_tgt_files(src, tgt):
-    if src[0] == "-":
-        for line in sys.stdin:
+def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls):
+    src_urls_lines = None
+    tgt_urls_lines = None
+
+    if (src[0] == "-" and src_urls[0] == "-"):
+        for idx, line in enumerate(sys.stdin):
+            line = line.strip().split("\t")
+
+            if len(line) != 4:
+                raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64<tab>src_url<tab>tgt_url')
+
+            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
+            src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
+            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
+            tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
+
+            src_urls_lines = [line[2].strip()] * len(src_lines)
+            tgt_urls_lines = [line[3].strip()] * len(tgt_lines)
+
+            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
+    elif src[0] == "-":
+        for idx, line in enumerate(sys.stdin):
             line = line.strip().split("\t")
 
             if len(line) != 2:
@@ -76,13 +95,31 @@ def process_src_and_tgt_files(src, tgt):
             tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
             tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
 
-            yield src_lines, tgt_lines
-    else:
-        for src_file, tgt_file in zip(src, tgt):
+            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(src_urls[idx], encoding="utf-8").readlines()))
+            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(tgt_urls[idx], encoding="utf-8").readlines()))
+
+            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
+    elif src_urls[0] == "-":
+        for idx, line in enumerate(sys.stdin):
+            line = line.strip().split("\t")
+
+            if len(line) != 2:
+                raise Exception('unexpected format when reading from stdin: expected format is src_url<tab>tgt_url')
+
             src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
             tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
+            src_urls_lines = [line[0].strip()] * len(src_lines)
+            tgt_urls_lines = [line[1].strip()] * len(tgt_lines)
 
-            yield src_lines, tgt_lines
+            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
+    else:
+        for src_file, tgt_file, src_urls_file, tgt_urls_file in zip(src, tgt, src_urls, tgt_urls):
+            src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
+            tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
+            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(src_urls_file, encoding="utf-8").readlines()))
+            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(tgt_urls_file, encoding="utf-8").readlines()))
+
+            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
 
 def _main():
     # make runs consistent
@@ -93,10 +130,10 @@ def _main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('-s', '--src', type=str, nargs='+', required=True,
-                        help='preprocessed source file to align. If "-" is provided, stdin will be used, also for --tgt (entries format: src_doc_base64<tab>tgt_doc_base64)')
+                        help='preprocessed source file to align. If "-" is provided, stdin will be used, also for --tgt (entries format: src_doc_base64<tab>tgt_doc_base64[<tab>src_url<tab>tgt_url])')
 
     parser.add_argument('-t', '--tgt', type=str, nargs='+', required=True,
-                        help='preprocessed target file to align. If "-" is provided, stdin will be used, also for --src (entries format: src_doc_base64<tab>tgt_doc_base64)')
+                        help='preprocessed target file to align. If "-" is provided, stdin will be used, also for --src (entries format: src_doc_base64<tab>tgt_doc_base64[<tab>src_url<tab>tgt_url])')
 
     parser.add_argument('-g', '--gold_alignment', type=str, nargs='+', required=False,
                         help='preprocessed target file to align')
@@ -138,10 +175,10 @@ def _main():
                         help='URLs will be used for the results: src_URLs<tab>tgt_URLs<tab>src_sentences<tab>tgt_sentences[<tab>score]')
 
     parser.add_argument('--src_urls', type=str, nargs='+',
-                        help='Source file of urls to print the results')
+                        help='Source file of urls to print the results. If "-" is provided, stdin will be used, also for --tgt-urls (entries format: [src_doc_base64<tab>tgt_doc_base64<tab>]src_url<tab>tgt_url)')
 
     parser.add_argument('--tgt_urls', type=str, nargs='+',
-                        help='Target file of urls to print the results')
+                        help='Target file of urls to print the results. If "-" is provided, stdin will be used, also for --src-urls (entries format: [src_doc_base64<tab>tgt_doc_base64<tab>]src_url<tab>tgt_url)')
 
     # Embeddings
     parser.add_argument('--embeddings_dim', type=int, default=768,
@@ -154,6 +191,7 @@ def _main():
     args = parser.parse_args()
 
     docs_provided_via_stdin = False
+    urls_provided_via_stdin = False
 
     if (args.src[0] == "-" and args.tgt[0] == "-"):
         # Docs are going to ve provided via stdin
@@ -167,6 +205,15 @@ def _main():
 
         if (not os.path.isfile(args.src_embed[0]) or not os.path.isfile(args.tgt_embed[0])):
             raise Exception('if --src and --tgt are going to be provided via stdin, src and tgt overlapping files must exist')
+    if (args.src_urls is not None and args.tgt_urls is not None and args.src_urls[0] == "-" and args.tgt_urls[0] == "-"):
+        # URLs are going to ve provided via stdin
+        logger.info('Reading URLs from stdin')
+
+        urls_provided_via_stdin = True
+
+        # Remove extra args
+        args.src_urls = args.src_urls[:1]
+        args.tgt_urls = args.tgt_urls[:1]
 
     if len(args.src) != len(args.tgt):
         raise Exception('number of source files must match number of target files')
@@ -175,15 +222,19 @@ def _main():
         if (not docs_provided_via_stdin and len(args.gold_alignment) != len(args.src)):
             raise Exception('number of gold alignment files, if provided, must match number of source and target files')
 
+    # Checks about the URLs format
     if (args.urls_format and (args.src_urls is None or args.tgt_urls is None)):
-        raise Exception('if you use --urls-format, you need to provide --src-urls and --tgt-urls')
+        raise Exception('if you use --urls_format, you need to provide --src_urls and --tgt_urls')
     if args.urls_format:
-        if (not docs_provided_via_stdin and (len(args.src) != len(args.src_urls) or len(args.tgt) != len(args.tgt_urls))):
+        if (not docs_provided_via_stdin and not urls_provided_via_stdin and (len(args.src) != len(args.src_urls) or len(args.tgt) != len(args.tgt_urls))):
             raise Exception('number of files must match number of URLs files')
 
-        for src_url, tgt_url in zip(args.src_urls, args.tgt_urls):
-            if (not os.path.isfile(src_url) or not os.path.isfile(tgt_url)):
-                raise Exception('--src-urls and --tgt-urls must exist')
+        if not urls_provided_via_stdin:
+            for src_url, tgt_url in zip(args.src_urls, args.tgt_urls):
+                if (not os.path.isfile(src_url) or not os.path.isfile(tgt_url)):
+                    raise Exception('--src_urls and --tgt_urls must exist')
+    else:
+        args.src_urls, args.tgt_urls = None, None
 
     if args.verbose:
         import logging
@@ -208,7 +259,8 @@ def _main():
     test_alignments = []
     stack_list = []
 
-    for idx, (src_lines, tgt_lines) in enumerate(process_src_and_tgt_files(args.src, args.tgt)):
+    # Process every pair of documents and, optionally, URLs
+    for idx, (src_lines, tgt_lines, src_urls_lines, tgt_urls_lines) in enumerate(process_docs_and_urls_files(args.src, args.tgt, args.src_urls, args.tgt_urls)):
         if docs_provided_via_stdin:
             logger.info('Aligning documents pair #%d', idx)
         else:
@@ -220,6 +272,7 @@ def _main():
         final_alignment_types = make_alignment_types(args.alignment_max_size)
         logger.debug('Considering alignment types %s', final_alignment_types)
 
+        # Sentence alignment
         stack = vecalign(vecs0=vecs0,
                          vecs1=vecs1,
                          final_alignment_types=final_alignment_types,
@@ -229,17 +282,11 @@ def _main():
                          costs_sample_size=args.costs_sample_size,
                          num_samps_for_norm=args.num_samps_for_norm)
 
-        # urls format
-        src_urls_lines = None
-        tgt_urls_lines = None
-
+        # URLs format
         if args.urls_format:
-            if docs_provided_via_stdin:
+            if (docs_provided_via_stdin and not urls_provided_via_stdin):
                 if (idx >= len(args.src_urls) or idx >= len(args.tgt_urls)):
                     raise Exception('number of files must match number of URLs files')
-
-            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(args.src_urls[idx], 'rt', encoding="utf-8").readlines()))
-            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(args.tgt_urls[idx], 'rt', encoding="utf-8").readlines()))
 
             # check that we have the expected number of lines
             if len(src_urls_lines) != len(src_lines):
