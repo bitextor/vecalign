@@ -1,1 +1,1 @@
--U sentence-transformers
+sentence-transformers
