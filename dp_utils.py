@@ -47,19 +47,23 @@ def yield_overlaps(lines, num_overlaps):
             yield out_line2
 
 
-def read_in_embeddings(text_file, embed_file, dim=768):
+def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
        and a numpy array of the embeddings
     """
     sent2line = dict()
+    dup = 0
 
     with open(text_file, 'rt', encoding="utf-8") as fin:
         for ii, line in enumerate(fin):
             if line.strip() in sent2line:
-                raise Exception('got multiple embeddings for the same line')
-            sent2line[line.strip()] = ii
+                if exception_when_dup:
+                    raise Exception('got multiple embeddings for the same line')
+                dup += 1
+                continue
+            sent2line[line.strip()] = ii - dup
 
     embed_fd = open(embed_file, "rb")
     embeddings = []
@@ -77,12 +81,16 @@ def read_in_embeddings(text_file, embed_file, dim=768):
 
     embeddings = np.array(embeddings, dtype=np.float32)
     embedding_size = embeddings.size // len(sent2line)
+    embedding_dim = embeddings.shape[1]
 
     if embeddings.size == 0:
         raise Exception('got empty embedding file')
 
     if embedding_size != dim:
-        raise Exception('expected an embedding size of %d, got %d', dim, embedding_size)
+        if (embedding_dim == dim and embedding_size != embedding_dim):
+            logger.warning('size of loaded embeddings does not match with the expected size, but this might be due to duplicate entries')
+        else:
+            raise Exception('expected an embedding size of %d, got %d', dim, embedding_size)
 
     logger.info('embedding_size determined to be %d', embedding_size)
 

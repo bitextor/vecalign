@@ -41,7 +41,8 @@ import overlap
 import embeddings
 
 def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
-                                             model_st="LaBSE", gpu_batch_size=32):
+                                             model_st="LaBSE", gpu_batch_size=32, embeddings_storage_input=None, embeddings_storage_path=None,
+                                             dim=768):
     if (os.path.isfile(embedding_file) and not os.path.isfile(overlapping_file)):
         logger.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
                        'generated, and likely the embedding file will not be compatible (this might lead to wrong results)',
@@ -61,7 +62,9 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
             # embeddings do not exist -> generate
             logger.info("Generating %s embeddings", label)
 
-            embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st)
+            embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st,
+                                           storage_input_file=embeddings_storage_input, storage_embedding_file=embeddings_storage_path,
+                                           dim=dim)
 
 def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls):
     src_urls_lines = None
@@ -131,52 +134,38 @@ def _main():
 
     parser.add_argument('-s', '--src', type=str, nargs='+', required=True,
                         help='preprocessed source file to align. If "-" is provided, stdin will be used, also for --tgt (entries format: src_doc_base64<tab>tgt_doc_base64[<tab>src_url<tab>tgt_url])')
-
     parser.add_argument('-t', '--tgt', type=str, nargs='+', required=True,
                         help='preprocessed target file to align. If "-" is provided, stdin will be used, also for --src (entries format: src_doc_base64<tab>tgt_doc_base64[<tab>src_url<tab>tgt_url])')
-
     parser.add_argument('-g', '--gold_alignment', type=str, nargs='+', required=False,
                         help='preprocessed target file to align')
-
     parser.add_argument('--src_embed', type=str, nargs=2, required=True,
                         help='Source embeddings. Requires two arguments: first is a text file, sencond is a binary embeddings file. ')
-
     parser.add_argument('--tgt_embed', type=str, nargs=2, required=True,
                         help='Target embeddings. Requires two arguments: first is a text file, sencond is a binary embeddings file. ')
-
     parser.add_argument('-a', '--alignment_max_size', type=int, default=4,
                         help='Searches for alignments up to size N-M, where N+M <= this value. Note that the the embeddings must support the requested number of overlaps')
-
     parser.add_argument('-d', '--del_percentile_frac', type=float, default=0.2,
                         help='Deletion penalty is set to this percentile (as a fraction) of the cost matrix distribution. Should be between 0 and 1.')
-
-    parser.add_argument('-v', '--verbose', help='sets consle to logging.DEBUG instead of logging.WARN',
+    parser.add_argument('-v', '--verbose', help='sets console to logging.INFO instead of logging.WARNING',
                         action='store_true')
-
+    parser.add_argument('-vv', '--more_verbose', help='sets console to logging.DEBUG instead of logging.WARNING',
+                        action='store_true')
     parser.add_argument('--max_size_full_dp', type=int, default=300,
                         help='Maximum size N for which is is acceptable to run full N^2 dynamic programming.')
-
     parser.add_argument('--costs_sample_size', type=int, default=20000,
                         help='Sample size to estimate costs distribution, used to set deletion penalty in conjunction with deletion_percentile.')
-
     parser.add_argument('--num_samps_for_norm', type=int, default=100,
                         help='Number of samples used for normalizing embeddings')
-
     parser.add_argument('--search_buffer_size', type=int, default=5,
                         help='Width (one side) of search buffer. Larger values makes search more likely to recover from errors but increases runtime.')
-
     parser.add_argument('--debug_save_stack', type=str,
                         help='Write stack to pickle file for debug purposes')
-
     parser.add_argument('--threshold', type=float, default=None,
                         help='Threshold which will be applied to the obtained scores of the alignment. All matches whose score is lower than the provided threshold will be discarded. The threshold is only applied to the printed results (it is not applied to the evaluation)')
-
     parser.add_argument('--urls_format', action='store_true',
                         help='URLs will be used for the results: src_URLs<tab>tgt_URLs<tab>src_sentences<tab>tgt_sentences[<tab>score]')
-
     parser.add_argument('--src_urls', type=str, nargs='+',
                         help='Source file of urls to print the results. If "-" is provided, stdin will be used, also for --tgt-urls (entries format: [src_doc_base64<tab>tgt_doc_base64<tab>]src_url<tab>tgt_url)')
-
     parser.add_argument('--tgt_urls', type=str, nargs='+',
                         help='Target file of urls to print the results. If "-" is provided, stdin will be used, also for --src-urls (entries format: [src_doc_base64<tab>tgt_doc_base64<tab>]src_url<tab>tgt_url)')
 
@@ -187,15 +176,35 @@ def _main():
                         help='Batch size for GPU when generating embeddings. The default value is 32')
     parser.add_argument('--embeddings_model', type=str, default="LaBSE",
                         help='Model which will be used to generate the embeddings with sentence_transformers. The default value is LaBSE')
+    parser.add_argument('--embeddings_src_storage_input', type=str,
+                        help='Path to the src storage file which contains sentences. You will need to provide --embeddings_storage_path as well')
+    parser.add_argument('--embeddings_src_storage_path', type=str,
+                        help='Path to the src storage file which contains embeddings. You will need to provide --embeddings_storage_input as well')
+    parser.add_argument('--embeddings_tgt_storage_input', type=str,
+                        help='Path to the tgt storage file which contains sentences. You will need to provide --embeddings_storage_path as well')
+    parser.add_argument('--embeddings_tgt_storage_path', type=str,
+                        help='Path to the tgt storage file which contains embeddings. You will need to provide --embeddings_storage_input as well')
 
     args = parser.parse_args()
 
     docs_provided_via_stdin = False
     urls_provided_via_stdin = False
 
+    for embeddings_storage_input, embeddings_storage_path, label in zip([args.embeddings_src_storage_input, args.embeddings_tgt_storage_input],
+                                                                        [args.embeddings_src_storage_path,  args.embeddings_tgt_storage_path],
+                                                                        ["src",                             "tgt"]):
+        if ((embeddings_storage_input is None) ^ (embeddings_storage_path is None)):
+            logger.warning("--embeddings_%s_storage_input and --embeddings_%s_storage_path both need to be provided to take effect", label, label)
+
+            if label == "src":
+                args.embeddings_src_storage_input = None
+                args.embeddings_src_storage_path = None
+            else:
+                args.embeddings_tgt_storage_input = None
+                args.embeddings_tgt_storage_path = None
     if (args.src[0] == "-" and args.tgt[0] == "-"):
         # Docs are going to ve provided via stdin
-        logger.info('Reading documents from stdin')
+        logger.info('reading documents from stdin')
 
         docs_provided_via_stdin = True
 
@@ -236,8 +245,9 @@ def _main():
     else:
         args.src_urls, args.tgt_urls = None, None
 
-    if args.verbose:
-        import logging
+    if args.more_verbose:
+        logger.setLevel(logging.DEBUG)
+    elif args.verbose:
         logger.setLevel(logging.INFO)
 
     if args.alignment_max_size < 2:
@@ -246,9 +256,16 @@ def _main():
 
     # Generate overlapping files and/or embeddings?
     generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size,
-                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size)
+                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
+                                             embeddings_storage_input=args.embeddings_src_storage_input,
+                                             embeddings_storage_path=args.embeddings_src_storage_path,
+                                             dim=args.embeddings_dim)
     generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size,
-                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size)
+                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
+                                             embeddings_storage_input=args.embeddings_tgt_storage_input,
+                                             embeddings_storage_path=args.embeddings_tgt_storage_path,
+                                             dim=args.embeddings_dim)
+
 
     # Load embeddings
     src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim)
