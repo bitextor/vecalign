@@ -20,6 +20,8 @@ from ast import literal_eval
 from collections import OrderedDict
 from math import ceil
 from time import time
+import gzip
+import base64
 
 import numpy as np
 
@@ -47,7 +49,7 @@ def yield_overlaps(lines, num_overlaps):
             yield out_line2
 
 
-def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True):
+def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, decode_text_base64=False):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
@@ -56,14 +58,43 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True):
     sent2line = dict()
     dup = 0
 
-    with open(text_file, 'rt', encoding="utf-8") as fin:
-        for ii, line in enumerate(fin):
-            if line.strip() in sent2line:
-                if exception_when_dup:
-                    raise Exception('got multiple embeddings for the same line')
-                dup += 1
-                continue
-            sent2line[line.strip()] = ii - dup
+    def create_index(generator):
+        nonlocal sent2line
+        nonlocal dup
+
+        ii = 0
+
+        for line in generator:
+            line = line.strip()
+
+            if decode_text_base64:
+                lines = base64.b64decode(line).decode("utf-8").strip().split("\n")
+            else:
+                lines = line.split("\n")
+
+            for l in lines:
+                l = l.strip()
+
+                if l in sent2line:
+                    if exception_when_dup:
+                        raise Exception('got multiple embeddings for the same line')
+                    dup += 1
+                    ii += 1
+
+                    continue
+                sent2line[l] = ii - dup
+                ii += 1
+
+    # Read file (check if GZIP)
+    # TODO we should use magic number identification
+    if (text_file.rsplit(".", 1)[-1].lower() in ("gzip", "gz") and text_file.lower() not in ("gzip", "gz")):
+        fin = gzip.open(text_file, 'rt', encoding="utf-8")
+    else:
+        fin = open(text_file, 'rt', encoding="utf-8")
+
+    create_index(fin)
+
+    fin.close()
 
     embed_fd = open(embed_file, "rb")
     embeddings = []
@@ -111,10 +142,6 @@ def make_doc_embedding(sent2line, line_embeddings, lines, num_overlaps):
 
     for ii, overlap in enumerate(range(1, num_overlaps + 1)):
         for jj, out_line in enumerate(layer(lines, overlap)):
-            if overlap == 1:
-                # TODO we can reuse previously generated embeddings (if provided)
-                pass
-
             try:
                 line_id = sent2line[out_line]
             except KeyError:

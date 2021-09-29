@@ -42,7 +42,7 @@ import embeddings
 
 def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
                                              model_st="LaBSE", gpu_batch_size=32, embeddings_storage_input=None, embeddings_storage_path=None,
-                                             dim=768):
+                                             embeddings_storage_input_base64=False, dim=768):
     if (os.path.isfile(embedding_file) and not os.path.isfile(overlapping_file)):
         logger.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
                        'generated, and likely the embedding file will not be compatible (this might lead to wrong results)',
@@ -64,7 +64,7 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
 
             embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st,
                                            storage_input_file=embeddings_storage_input, storage_embedding_file=embeddings_storage_path,
-                                           dim=dim)
+                                           storage_input_file_base64=embeddings_storage_input_base64, dim=dim)
 
 def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls):
     src_urls_lines = None
@@ -178,10 +178,14 @@ def _main():
                         help='Model which will be used to generate the embeddings with sentence_transformers. The default value is LaBSE')
     parser.add_argument('--embeddings_src_storage_input', type=str,
                         help='Path to the src storage file which contains sentences. You will need to provide --embeddings_storage_path as well')
+    parser.add_argument('--embeddings_src_storage_input_base64', action='store_true',
+                        help='Sentences provided via --embeddings_src_storage_input are base64 encoded')
     parser.add_argument('--embeddings_src_storage_path', type=str,
                         help='Path to the src storage file which contains embeddings. You will need to provide --embeddings_storage_input as well')
     parser.add_argument('--embeddings_tgt_storage_input', type=str,
                         help='Path to the tgt storage file which contains sentences. You will need to provide --embeddings_storage_path as well')
+    parser.add_argument('--embeddings_tgt_storage_input_base64', action='store_true',
+                        help='Sentences provided via --embeddings_tgt_storage_input are base64 encoded')
     parser.add_argument('--embeddings_tgt_storage_path', type=str,
                         help='Path to the tgt storage file which contains embeddings. You will need to provide --embeddings_storage_input as well')
 
@@ -259,11 +263,13 @@ def _main():
                                              model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
                                              embeddings_storage_input=args.embeddings_src_storage_input,
                                              embeddings_storage_path=args.embeddings_src_storage_path,
+                                             embeddings_storage_input_base64=args.embeddings_src_storage_input_base64,
                                              dim=args.embeddings_dim)
     generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size,
                                              model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
                                              embeddings_storage_input=args.embeddings_tgt_storage_input,
                                              embeddings_storage_path=args.embeddings_tgt_storage_path,
+                                             embeddings_storage_input_base64=args.embeddings_tgt_storage_input_base64,
                                              dim=args.embeddings_dim)
 
 

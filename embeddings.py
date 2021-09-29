@@ -14,7 +14,8 @@ if __name__ != "__main__":
     logging = logging.getLogger('vecalign')
 
 def generate_embeddings(input_file, output_file, gpu_batch_size=32, batch_size=None, model_st="LaBSE",
-                        storage_input_file=None, storage_embedding_file=None, dim=768):
+                        storage_input_file=None, storage_embedding_file=None, storage_input_file_base64=False,
+                        dim=768):
     input_fd = open(input_file)
     output_fd = open(output_file, "wb")
     batch_size = max(1, batch_size) if batch_size is not None else None
@@ -26,7 +27,8 @@ def generate_embeddings(input_file, output_file, gpu_batch_size=32, batch_size=N
     if (storage_input_file is not None and storage_embedding_file is not None):
         # Load lines and embeddings from storage
         storage_sent2line, storage_embeddings = read_in_embeddings(storage_input_file, storage_embedding_file,
-                                                                   dim=dim, exception_when_dup=False)
+                                                                   dim=dim, exception_when_dup=False,
+                                                                   decode_text_base64=storage_input_file_base64)
 
     while not input_fd.closed:
         stop = False
@@ -100,6 +102,8 @@ if __name__ == "__main__":
                         help='Model to use by SentenceTransformers')
     parser.add_argument('--storage-input-file', type=str,
                         help='Path to storage with sentences')
+    parser.add_argument('--storage-input-file-base64', action='store_true',
+                        help='Storage with sentences are base64 encoded')
     parser.add_argument('--storage-embedding-file', type=str,
                         help='Path to storage with embeddings')
 
@@ -121,6 +125,7 @@ if __name__ == "__main__":
               "model_st": args.model,
               "storage_input_file": args.storage_input_file,
               "storage_embedding_file": args.storage_embedding_file,
+              "storage_input_file_base64": args.storage_input_file_base64,
               "dim": args.dim,}
 
     generate_embeddings(args.input_file, args.output_file, **kwargs)
