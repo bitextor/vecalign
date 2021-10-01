@@ -27,13 +27,6 @@ import base64
 
 import numpy as np
 
-logger = logging.getLogger('vecalign')
-logger.setLevel(logging.WARNING)
-logFormatter = logging.Formatter("%(asctime)s  %(levelname)-5.5s  %(message)s")
-consoleHandler = logging.StreamHandler()
-consoleHandler.setFormatter(logFormatter)
-logger.addHandler(consoleHandler)
-
 from dp_utils import make_alignment_types, print_alignments, read_alignments, \
     read_in_embeddings, make_doc_embedding, vecalign
 from score import score_multiple, log_final_scores
@@ -42,9 +35,10 @@ import embeddings
 
 def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
                                              model_st="LaBSE", gpu_batch_size=32, embeddings_storage_input=None, embeddings_storage_path=None,
-                                             embeddings_storage_input_base64=False, dim=768):
+                                             embeddings_storage_input_base64=False, storage_embeddings_are_uniq=True, dim=768,
+                                             optimization_strategy=0, storage_embeddings_optimization_strategy=0):
     if (os.path.isfile(embedding_file) and not os.path.isfile(overlapping_file)):
-        logger.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
+        logging.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
                        'generated, and likely the embedding file will not be compatible (this might lead to wrong results)',
                        label, label)
 
@@ -52,7 +46,7 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
     if not os.path.isfile(overlapping_file):
         if not os.path.isfile(overlapping_file):
             # overlapping file does not exist -> generate
-            logger.info("Generating %s overlapping file", label)
+            logging.info("Generating %s overlapping file", label)
 
             overlap.overlap(overlapping_file, list_of_doc_paths, num_overlaps)
 
@@ -60,11 +54,21 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
     if not os.path.isfile(embedding_file):
         if not os.path.isfile(embedding_file):
             # embeddings do not exist -> generate
-            logger.info("Generating %s embeddings", label)
+            logging.info("Generating %s embeddings", label)
 
-            embeddings.generate_embeddings(overlapping_file, embedding_file, gpu_batch_size=gpu_batch_size, model_st=model_st,
-                                           storage_input_file=embeddings_storage_input, storage_embedding_file=embeddings_storage_path,
-                                           storage_input_file_base64=embeddings_storage_input_base64, dim=dim)
+            kwargs = {
+                "gpu_batch_size": gpu_batch_size,
+                "model_st": model_st,
+                "storage_input_file": embeddings_storage_input,
+                "storage_embedding_file": embeddings_storage_path,
+                "storage_input_file_base64": embeddings_storage_input_base64,
+                "dim": dim,
+                "storage_embeddings_are_uniq": storage_embeddings_are_uniq,
+                "optimization_strategy": optimization_strategy,
+                "storage_embeddings_optimization_strategy": storage_embeddings_optimization_strategy,
+                }
+
+            embeddings.generate_embeddings(overlapping_file, embedding_file, **kwargs)
 
 def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls):
     src_urls_lines = None
@@ -188,9 +192,33 @@ def _main():
                         help='Sentences provided via --embeddings_tgt_storage_input are base64 encoded')
     parser.add_argument('--embeddings_tgt_storage_path', type=str,
                         help='Path to the tgt storage file which contains embeddings. You will need to provide --embeddings_storage_input as well')
+    parser.add_argument('--embeddings_src_storage_are_not_uniq', action='store_true',
+                        help='Expected src storage embeddings are monotonic and uniq (i.e. embeddings from previous sentences are not expected to be provided). If the provided embeddings are 1-1 with the sentences, this flag must be set')
+    parser.add_argument('--embeddings_tgt_storage_are_not_uniq', action='store_true',
+                        help='Expected tgt storage embeddings are monotonic and uniq (i.e. embeddings from previous sentences are not expected to be provided). If the provided embeddings are 1-1 with the sentences, this flag must be set')
+    parser.add_argument('--src_embeddings_optimization_strategy', type=int, default=0, choices=[0, 1, 2],
+                        help='Optimization strategy applied to the embeddings when being generated. The generated embeddings will be stored applying the same strategy')
+    parser.add_argument('--src_storage_embeddings_optimization_strategy', type=int, default=0, choices=[0, 1, 2],
+                        help='Optimization strategy applied to the storage embeddings when being loaded')
+    parser.add_argument('--tgt_embeddings_optimization_strategy', type=int, default=0, choices=[0, 1, 2],
+                        help='Optimization strategy applied to the embeddings when being generated. The generated embeddings will be stored applying the same strategy')
+    parser.add_argument('--tgt_storage_embeddings_optimization_strategy', type=int, default=0, choices=[0, 1, 2],
+                        help='Optimization strategy applied to the storage embeddings when being loaded')
 
     args = parser.parse_args()
 
+    # Logging
+    logging_level = logging.WARNING
+
+    if args.more_verbose:
+        logging_level = logging.DEBUG
+    elif args.verbose:
+        logging_level = logging.INFO
+
+    logging.basicConfig(handlers=[logging.StreamHandler()], level=logging_level,
+                        format="%(asctime)s  %(levelname)-5.5s  %(message)s")
+
+    # Main
     docs_provided_via_stdin = False
     urls_provided_via_stdin = False
 
@@ -198,7 +226,7 @@ def _main():
                                                                         [args.embeddings_src_storage_path,  args.embeddings_tgt_storage_path],
                                                                         ["src",                             "tgt"]):
         if ((embeddings_storage_input is None) ^ (embeddings_storage_path is None)):
-            logger.warning("--embeddings_%s_storage_input and --embeddings_%s_storage_path both need to be provided to take effect", label, label)
+            logging.warning("--embeddings_%s_storage_input and --embeddings_%s_storage_path both need to be provided to take effect", label, label)
 
             if label == "src":
                 args.embeddings_src_storage_input = None
@@ -208,7 +236,7 @@ def _main():
                 args.embeddings_tgt_storage_path = None
     if (args.src[0] == "-" and args.tgt[0] == "-"):
         # Docs are going to ve provided via stdin
-        logger.info('reading documents from stdin')
+        logging.info('reading documents from stdin')
 
         docs_provided_via_stdin = True
 
@@ -220,7 +248,7 @@ def _main():
             raise Exception('if --src and --tgt are going to be provided via stdin, src and tgt overlapping files must exist')
     if (args.src_urls is not None and args.tgt_urls is not None and args.src_urls[0] == "-" and args.tgt_urls[0] == "-"):
         # URLs are going to ve provided via stdin
-        logger.info('Reading URLs from stdin')
+        logging.info('Reading URLs from stdin')
 
         urls_provided_via_stdin = True
 
@@ -249,33 +277,47 @@ def _main():
     else:
         args.src_urls, args.tgt_urls = None, None
 
-    if args.more_verbose:
-        logger.setLevel(logging.DEBUG)
-    elif args.verbose:
-        logger.setLevel(logging.INFO)
-
     if args.alignment_max_size < 2:
-        logger.warning('alignment_max_size < 2: increasing to 2 so that 1-1 alignments will be considered')
+        logging.warning('alignment_max_size < 2: increasing to 2 so that 1-1 alignments will be considered')
         args.alignment_max_size = 2
 
     # Generate overlapping files and/or embeddings?
-    generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size,
-                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
-                                             embeddings_storage_input=args.embeddings_src_storage_input,
-                                             embeddings_storage_path=args.embeddings_src_storage_path,
-                                             embeddings_storage_input_base64=args.embeddings_src_storage_input_base64,
-                                             dim=args.embeddings_dim)
-    generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size,
-                                             model_st=args.embeddings_model, gpu_batch_size=args.embeddings_batch_size,
-                                             embeddings_storage_input=args.embeddings_tgt_storage_input,
-                                             embeddings_storage_path=args.embeddings_tgt_storage_path,
-                                             embeddings_storage_input_base64=args.embeddings_tgt_storage_input_base64,
-                                             dim=args.embeddings_dim)
+    src_gen_kwargs = {
+        "model_st": args.embeddings_model,
+        "gpu_batch_size": args.embeddings_batch_size,
+        "embeddings_storage_input": args.embeddings_src_storage_input,
+        "embeddings_storage_path": args.embeddings_src_storage_path,
+        "embeddings_storage_input_base64": args.embeddings_src_storage_input_base64,
+        "storage_embeddings_are_uniq": not args.embeddings_src_storage_are_not_uniq,
+        "dim": args.embeddings_dim,
+        "optimization_strategy": args.src_embeddings_optimization_strategy,
+        "storage_embeddings_optimization_strategy": args.src_storage_embeddings_optimization_strategy,
+        }
+    tgt_gen_kwargs = {
+        "model_st": args.embeddings_model,
+        "gpu_batch_size": args.embeddings_batch_size,
+        "embeddings_storage_input": args.embeddings_tgt_storage_input,
+        "embeddings_storage_path": args.embeddings_tgt_storage_path,
+        "embeddings_storage_input_base64": args.embeddings_tgt_storage_input_base64,
+        "storage_embeddings_are_uniq": not args.embeddings_tgt_storage_are_not_uniq,
+        "dim": args.embeddings_dim,
+        "optimization_strategy": args.tgt_embeddings_optimization_strategy,
+        "storage_embeddings_optimization_strategy": args.tgt_storage_embeddings_optimization_strategy,
+        }
 
+    generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size, **src_gen_kwargs)
+    generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size, **tgt_gen_kwargs)
+
+    del src_gen_kwargs, tgt_gen_kwargs
 
     # Load embeddings
-    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim)
-    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim)
+    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim, to_float32=False)
+    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim, to_float32=False)
+
+    if args.src_embeddings_optimization_strategy:
+        src_line_embeddings = embeddings.get_original_embedding_from_optimized(src_line_embeddings, strategy=args.src_embeddings_optimization_strategy)
+    if args.tgt_embeddings_optimization_strategy:
+        tgt_line_embeddings = embeddings.get_original_embedding_from_optimized(tgt_line_embeddings, strategy=args.tgt_embeddings_optimization_strategy)
 
     width_over2 = ceil(args.alignment_max_size / 2.0) + args.search_buffer_size
 
@@ -285,15 +327,15 @@ def _main():
     # Process every pair of documents and, optionally, URLs
     for idx, (src_lines, tgt_lines, src_urls_lines, tgt_urls_lines) in enumerate(process_docs_and_urls_files(args.src, args.tgt, args.src_urls, args.tgt_urls)):
         if docs_provided_via_stdin:
-            logger.info('Aligning documents pair #%d', idx)
+            logging.info('Aligning documents pair #%d', idx)
         else:
-            logger.info('Aligning src="%s" to tgt="%s"', args.src[idx], args.tgt[idx])
+            logging.info('Aligning src="%s" to tgt="%s"', args.src[idx], args.tgt[idx])
 
         vecs0 = make_doc_embedding(src_sent2line, src_line_embeddings, src_lines, args.alignment_max_size)
         vecs1 = make_doc_embedding(tgt_sent2line, tgt_line_embeddings, tgt_lines, args.alignment_max_size)
 
         final_alignment_types = make_alignment_types(args.alignment_max_size)
-        logger.debug('Considering alignment types %s', final_alignment_types)
+        logging.debug('Considering alignment types %s', final_alignment_types)
 
         # Sentence alignment
         stack = vecalign(vecs0=vecs0,

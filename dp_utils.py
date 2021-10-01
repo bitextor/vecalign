@@ -30,9 +30,6 @@ pyximport.install(setup_args={'include_dirs':np.get_include()}, inplace=True, re
 
 from dp_core import make_dense_costs, score_path, sparse_dp, make_sparse_costs, dense_dp
 
-logger = logging.getLogger('vecalign')  # set up in vecalign.py
-
-
 def preprocess_line(line):
     line = line.strip()
     if len(line) == 0:
@@ -49,7 +46,8 @@ def yield_overlaps(lines, num_overlaps):
             yield out_line2
 
 
-def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, decode_text_base64=False):
+def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, decode_text_base64=False,
+                       embed_file_uniq=True, to_float32=True):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
@@ -82,7 +80,8 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
                     ii += 1
 
                     continue
-                sent2line[l] = ii - dup
+
+                sent2line[l] = ii - (dup if embed_file_uniq else 0)
                 ii += 1
 
     # Read file (check if GZIP)
@@ -110,8 +109,15 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
 
     embed_fd.close()
 
-    embeddings = np.array(embeddings, dtype=np.float32)
-    embedding_size = embeddings.size // len(sent2line)
+    if to_float32:
+        if (len(embeddings) > 0 and embeddings[0].dtype not in (np.float16, np.float32)):
+            logging.warning("changing dtype=np.float32 from an unexpected dtype=%s", embeddings[0].dtype)
+
+        embeddings = np.array(embeddings, dtype=np.float32)
+    else:
+        embeddings = np.array(embeddings)
+
+    embedding_size = embeddings.size // (len(sent2line) + (0 if embed_file_uniq else dup))
     embedding_dim = embeddings.shape[1]
 
     if embeddings.size == 0:
@@ -119,11 +125,12 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
 
     if embedding_size != dim:
         if (embedding_dim == dim and embedding_size != embedding_dim):
-            logger.warning('size of loaded embeddings does not match with the expected size, but this might be due to duplicate entries')
+            if embedding.dtype == np.float32:
+                logging.warning('size of loaded embeddings does not match with the expected size, but this might be due to duplicate entries (size: %d, embedding calculated size: %d; no. uniq lines: %d; dup. lines (real vs taken into account): %d vs %d; dtype: %s)', embeddings.size, embedding_size, len(sent2line), dup, (0 if embed_file_uniq else dup), embeddings.dtype)
         else:
             raise Exception('expected an embedding size of %d, got %d', dim, embedding_size)
 
-    logger.info('embedding_size determined to be %d', embedding_size)
+    logging.info('embedding_size determined to be %d', embedding_size)
 
     return sent2line, embeddings
 
@@ -145,7 +152,7 @@ def make_doc_embedding(sent2line, line_embeddings, lines, num_overlaps):
             try:
                 line_id = sent2line[out_line]
             except KeyError:
-                logger.warning('Failed to find overlap=%d line "%s": will use a random vector', overlap, out_line)
+                logging.warning('Failed to find overlap=%d line "%s": will use a random vector', overlap, out_line)
                 line_id = None
 
             if line_id is not None:
@@ -210,7 +217,7 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
                 continue
             if (len(x) == 0 or len(y) == 0):
                 log_data = ('src', x, 'tgt', y) if len(x) == 0 else ('tgt', y, 'src', x)
-                logger.debug('alignment not taken into account since %s sentence (%s) does not match with %s sentence (%s)',
+                logging.debug('alignment not taken into account since %s sentence (%s) does not match with %s sentence (%s)',
                             log_data[0], log_data[1], log_data[2], log_data[3])
 
                 continue
@@ -255,7 +262,7 @@ class DeletionKnob(object):
         self.res_max = res_max
 
         if self.res_min >= self.res_max:
-            logger.warning('res_max <= res_min, increasing it')
+            logging.warning('res_max <= res_min, increasing it')
             self.res_max = self.res_min + 1e-4
 
         num_bins = 1000
@@ -465,7 +472,7 @@ def extend_alignments(course_alignments, size0, size1):
     extra_x = list(range(xmax + 1, size0 + 1))
     extra_y = list(range(ymax + 1, size1 + 1))
 
-    logger.debug('extending alignments in x by %d and y by %d', len(extra_x), len(extra_y))
+    logging.debug('extending alignments in x by %d and y by %d', len(extra_x), len(extra_y))
 
     if len(extra_x) == 0:
         for yval in extra_y:
@@ -607,7 +614,7 @@ def vecalign(vecs0,
              norms0=None,
              norms1=None):
     if width_over2 < 3:
-        logger.warning('width_over2 was set to %d, which does not make sense. increasing to 3.', width_over2)
+        logging.warning('width_over2 was set to %d, which does not make sense. increasing to 3.', width_over2)
         width_over2 = 3
 
     # make sure input embeddings are norm==1
@@ -672,10 +679,10 @@ def vecalign(vecs0,
                                                  f_laser_norms=stack[depth]['n1'][0, :],
                                                  sample_size=costs_sample_size)
         stack[depth]['del_penalty'] = stack[depth]['del_knob'].percentile_frac_to_del_penalty(del_percentile_frac)
-        logger.debug('del_penalty at depth %d: %f', depth, stack[depth]['del_penalty'])
+        logging.debug('del_penalty at depth %d: %f', depth, stack[depth]['del_penalty'])
     runtimes['Compute deletion penalties'] = time() - t0
     tt = time() - t0
-    logger.debug('%d x %d full DP make features: %.6fs (%.3e per dot product)',
+    logging.debug('%d x %d full DP make features: %.6fs (%.3e per dot product)',
                  stack[max_depth]['size0'], stack[max_depth]['size1'], tt,
                  tt / (stack[max_depth]['size0'] + 1e-6) / (stack[max_depth]['size1'] + 1e-6))
     # full DP at maximum recursion depth
@@ -716,7 +723,7 @@ def vecalign(vecs0,
 
         tt = time() - t0
         num_dot_products = len(stack[depth]['b_offset']) * len(stack[depth]['alignment_types']) * width_over2 * 2
-        logger.debug('%d x %d sparse DP (%d alignment types, %d window) make features: %.6fs (%.3e per dot product)',
+        logging.debug('%d x %d sparse DP (%d alignment types, %d window) make features: %.6fs (%.3e per dot product)',
                      stack[max_depth]['size0'], stack[max_depth]['size1'],
                      len(stack[depth]['alignment_types']), width_over2 * 2,
                      tt, tt / (num_dot_products + 1e6))
@@ -750,6 +757,6 @@ def vecalign(vecs0,
     max_key_str_len = max([len(key) for key in runtimes])
     for key in runtimes:
         if runtimes[key] > 5e-5:
-            logger.info(key + ' took ' + '.' * (max_key_str_len + 5 - len(key)) + ('%.4fs' % runtimes[key]).rjust(7))
+            logging.info(key + ' took ' + '.' * (max_key_str_len + 5 - len(key)) + ('%.4fs' % runtimes[key]).rjust(7))
 
     return stack
