@@ -20,7 +20,7 @@ import sys
 import base64
 import argparse
 
-from dp_utils import yield_overlaps
+from vecalign.dp_utils import yield_overlaps
 
 
 def overlap(output_file, input_files, num_overlaps):

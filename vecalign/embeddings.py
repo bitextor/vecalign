@@ -8,7 +8,7 @@ import argparse
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
 
-from dp_utils import read_in_embeddings
+from vecalign.dp_utils import read_in_embeddings
 
 _STRATEGY_2_BITS = 8
 _STRATEGY_2_BINS = (np.array(range(2 ** _STRATEGY_2_BITS - 1), dtype=np.float32) - (2 ** _STRATEGY_2_BITS - 1) // 2) / ((2 ** _STRATEGY_2_BITS) / 2)

@@ -27,11 +27,11 @@ import base64
 
 import numpy as np
 
-from dp_utils import make_alignment_types, print_alignments, read_alignments, \
+from vecalign.dp_utils import make_alignment_types, print_alignments, read_alignments, \
     read_in_embeddings, make_doc_embedding, vecalign
-from score import score_multiple, log_final_scores
-import overlap
-import embeddings
+from vecalign.score import score_multiple, log_final_scores
+import vecalign.overlap
+import vecalign.embeddings
 
 def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
                                              model_st="LaBSE", gpu_batch_size=32, embeddings_storage_input=None, embeddings_storage_path=None,
