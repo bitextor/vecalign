@@ -210,9 +210,40 @@ def read_alignments(fin):
 
 
 def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, urls_format=False,
-                     src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None, doc_idx=None):
-    if scores is not None:
-        for (x, y), s in zip(alignments, scores):
+                     src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None, doc_idx=None,
+                     src_paragraphs=None, tgt_paragraphs=None):
+    paragraphs = False
+    separator = ''
+
+    if src_paragraphs and tgt_paragraphs:
+        paragraphs = True
+    if urls_format:
+        separator = '\t'
+    else:
+        separator = ':'
+
+    # Print header
+    header = ""
+
+    if urls_format:
+        header += f"src_url{separator}trg_url{separator}src_text{separator}trg_text"
+    else:
+        if doc_idx is not None:
+            header += f"doc_idx{separator}"
+
+        header += f"src_idx{separator}trg_idx"
+
+    if scores:
+        header += f"{separator}vecalign_score"
+    if paragraphs:
+        header += f"{separator}src_paragraph_id{separator}trg_paragraph_id"
+
+    print(header, file=file)
+
+    for idx, (x, y) in enumerate(alignments):
+        if scores:
+            s = scores[idx]
+
             if (threshold is not None and s < threshold):
                 continue
             if (len(x) == 0 or len(y) == 0):
@@ -222,32 +253,29 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
                 continue
 
-            if urls_format:
-                x_lines = ' '.join([preprocess_line(src_lines[i]) for i in x])
-                x_urls = ' '.join([src_urls[i] for i in x])
-                y_lines = ' '.join([preprocess_line(tgt_lines[i]) for i in y])
-                y_urls = ' '.join([tgt_urls[i] for i in y])
+        if urls_format:
+            x_lines = ' '.join([preprocess_line(src_lines[i]) for i in x])
+            x_urls = ' '.join([src_urls[i] for i in x])
+            y_lines = ' '.join([preprocess_line(tgt_lines[i]) for i in y])
+            y_urls = ' '.join([tgt_urls[i] for i in y])
+            print_value = f"{x_urls}{separator}{y_urls}{separator}{x_lines}{separator}{y_lines}"
+        else:
+            print_value = ''
 
-                print('%s\t%s\t%s\t%s\t%.6f' % (x_urls, y_urls, x_lines, y_lines, s), file=file)
-            else:
-                if doc_idx is not None:
-                    print('%d:%s:%s:%.6f' % (doc_idx, x, y, s), file=file)
-                else:
-                    print('%s:%s:%.6f' % (x, y, s), file=file)
-    else:
-        for x, y in alignments:
-            if urls_format:
-                x_lines = ' '.join([preprocess_line(src_lines[i]) for i in x])
-                x_urls = ' '.join([src_urls[i] for i in x])
-                y_lines = ' '.join([preprocess_line(tgt_lines[i]) for i in y])
-                y_urls = ' '.join([tgt_urls[i] for i in y])
+            if doc_idx is not None:
+                print_value += f"{doc_idx}{separator}"
 
-                print('%s\t%s\t%s\t%s' % (x_urls, y_urls, x_lines, y_lines), file=file)
-            else:
-                if doc_idx is not None:
-                    print('%d:%s:%s' % (doc_idx, x, y), file=file)
-                else:
-                    print('%s:%s' % (x, y), file=file)
+            print_value += f"{x}{separator}{y}"
+
+        if scores:
+            print_value += f"{separator}{s:.6f}"
+        if paragraphs:
+            x_paragraphs = ' '.join([src_paragraphs[i] for i in x])
+            y_paragraphs = ' '.join([tgt_paragraphs[i] for i in y])
+
+            print_value += f"{separator}{x_paragraphs}{separator}{y_paragraphs}"
+
+        print(print_value, file=file)
 
 
 class DeletionKnob(object):

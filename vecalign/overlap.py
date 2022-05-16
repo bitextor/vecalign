@@ -23,7 +23,7 @@ import argparse
 from vecalign.dp_utils import yield_overlaps
 
 
-def overlap(output_file, input_files, num_overlaps):
+def overlap(output_file, input_files, num_overlaps, paragraphs=False):
     output = set()
 
     if input_files[0] == "-":
@@ -32,6 +32,7 @@ def overlap(output_file, input_files, num_overlaps):
         for lines in sys.stdin:
             lines = lines.strip()
             lines = base64.b64decode(lines).decode("utf-8").split("\n")
+            lines = list(map(lambda l: l.split('\t')[0], lines)) if paragraphs else lines # Remove paragraphs
             lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), lines)))
 
             for out_line in yield_overlaps(lines, num_overlaps):

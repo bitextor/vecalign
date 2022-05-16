@@ -36,7 +36,8 @@ import vecalign.embeddings as embeddings
 def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, label, list_of_doc_paths, num_overlaps,
                                              model_st="LaBSE", gpu_batch_size=32, embeddings_storage_input=None, embeddings_storage_path=None,
                                              embeddings_storage_input_base64=False, storage_embeddings_are_uniq=True, dim=768,
-                                             optimization_strategy=0, storage_embeddings_optimization_strategy=0):
+                                             optimization_strategy=0, storage_embeddings_optimization_strategy=0,
+                                             paragraphs=False):
     if (os.path.isfile(embedding_file) and not os.path.isfile(overlapping_file)):
         logging.warning('%s embedding file does exist but %s overlapping file does not: only overlapping file will be '
                        'generated, and likely the embedding file will not be compatible (this might lead to wrong results)',
@@ -48,7 +49,7 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
             # overlapping file does not exist -> generate
             logging.info("Generating %s overlapping file", label)
 
-            overlap.overlap(overlapping_file, list_of_doc_paths, num_overlaps)
+            overlap.overlap(overlapping_file, list_of_doc_paths, num_overlaps, paragraphs=paragraphs)
 
     # Generate embeddings?
     if not os.path.isfile(embedding_file):
@@ -70,63 +71,50 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
 
             embeddings.generate_embeddings(overlapping_file, embedding_file, **kwargs)
 
-def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls):
+def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
     src_urls_lines = None
     tgt_urls_lines = None
+    is_stdin = src[0] == "-" or src_urls[0]
+    generator = sys.stdin if is_stdin else zip(src, tgt, src_urls, tgt_urls)
 
-    if (src[0] == "-" and src_urls[0] == "-"):
-        for idx, line in enumerate(sys.stdin):
-            line = line.strip().split("\t")
+    for idx, line in enumerate(generator):
+        line = line.strip().split("\t") if is_stdin else line
 
+        if src[0] == "-" and src_urls[0] == "-":
             if len(line) != 4:
                 raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64<tab>src_url<tab>tgt_url')
-
-            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
-            src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
-            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
-            tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
-
-            src_urls_lines = [line[2].strip()] * len(src_lines)
-            tgt_urls_lines = [line[3].strip()] * len(tgt_lines)
-
-            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
-    elif src[0] == "-":
-        for idx, line in enumerate(sys.stdin):
-            line = line.strip().split("\t")
-
+        elif src[0] == "-":
             if len(line) != 2:
                 raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64')
-
-            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
-            src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
-            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
-            tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
-
-            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(src_urls[idx], encoding="utf-8").readlines()))
-            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(tgt_urls[idx], encoding="utf-8").readlines()))
-
-            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
-    elif src_urls[0] == "-":
-        for idx, line in enumerate(sys.stdin):
-            line = line.strip().split("\t")
-
+        elif src_urls[0] == "-":
             if len(line) != 2:
                 raise Exception('unexpected format when reading from stdin: expected format is src_url<tab>tgt_url')
 
-            src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
-            tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
-            src_urls_lines = [line[0].strip()] * len(src_lines)
-            tgt_urls_lines = [line[1].strip()] * len(tgt_lines)
+        if src[0] != "-":
+            src_lines = open(line[0], 'rt', encoding="utf-8").readlines()
+            tgt_lines = open(line[1], 'rt', encoding="utf-8").readlines()
+        else:
+            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
+            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
 
-            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
-    else:
-        for src_file, tgt_file, src_urls_file, tgt_urls_file in zip(src, tgt, src_urls, tgt_urls):
-            src_lines = open(src_file, 'rt', encoding="utf-8").readlines()
-            tgt_lines = open(tgt_file, 'rt', encoding="utf-8").readlines()
-            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(src_urls_file, encoding="utf-8").readlines()))
-            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(tgt_urls_file, encoding="utf-8").readlines()))
+        src_paragraphs = []
+        tgt_paragraphs = []
 
-            yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines
+        if paragraphs:
+            src_lines, src_paragraphs = list(zip(*map(lambda l: l.split('\t'), src_lines)))
+            tgt_lines, tgt_paragraphs = list(zip(*map(lambda l: l.split('\t'), tgt_lines)))
+
+        src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
+        tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
+
+        if src_urls[0] == "-":
+            src_urls_lines = [line[2 if src[0] == "-" else 0].strip()] * len(src_lines)
+            tgt_urls_lines = [line[3 if src[0] == "-" else 1].strip()] * len(tgt_lines)
+        else:
+            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(line[2 if src[0] == "-" else 0][idx], encoding="utf-8").readlines()))
+            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(line[3 if src[0] == "-" else 1][idx], encoding="utf-8").readlines()))
+
+        yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_paragraphs, tgt_paragraphs
 
 def _main():
     # make runs consistent
@@ -204,6 +192,8 @@ def _main():
                         help='Optimization strategy applied to the embeddings when being generated. The generated embeddings will be stored applying the same strategy')
     parser.add_argument('--tgt_storage_embeddings_optimization_strategy', type=int, default=0, choices=[0, 1, 2],
                         help='Optimization strategy applied to the storage embeddings when being loaded')
+    parser.add_argument('--paragraph_identification', action='store_true',
+                        help='Enable paragraph identification. Identifier is expected to be in the 2nd column of the provided documents')
 
     args = parser.parse_args()
 
@@ -305,8 +295,8 @@ def _main():
         "storage_embeddings_optimization_strategy": args.tgt_storage_embeddings_optimization_strategy,
         }
 
-    generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size, **src_gen_kwargs)
-    generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size, **tgt_gen_kwargs)
+    generate_overlapping_and_embedding_files(args.src_embed[0], args.src_embed[1], "src", args.src, args.alignment_max_size, **src_gen_kwargs, paragraphs=args.paragraph_identification)
+    generate_overlapping_and_embedding_files(args.tgt_embed[0], args.tgt_embed[1], "tgt", args.tgt, args.alignment_max_size, **tgt_gen_kwargs, paragraphs=args.paragraph_identification)
 
     del src_gen_kwargs, tgt_gen_kwargs
 
@@ -325,7 +315,7 @@ def _main():
     stack_list = []
 
     # Process every pair of documents and, optionally, URLs
-    for idx, (src_lines, tgt_lines, src_urls_lines, tgt_urls_lines) in enumerate(process_docs_and_urls_files(args.src, args.tgt, args.src_urls, args.tgt_urls)):
+    for idx, (src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_paragraphs, tgt_paragraphs) in enumerate(process_docs_and_urls_files(args.src, args.tgt, args.src_urls, args.tgt_urls, paragraphs=args.paragraph_identification)):
         if docs_provided_via_stdin:
             logging.info('Aligning documents pair #%d', idx)
         else:
@@ -362,7 +352,8 @@ def _main():
         # write final alignments to stdout
         print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'], threshold=args.threshold,
                          urls_format=args.urls_format, src_lines=src_lines, tgt_lines=tgt_lines,
-                         src_urls=src_urls_lines, tgt_urls=tgt_urls_lines, doc_idx=idx)
+                         src_urls=src_urls_lines, tgt_urls=tgt_urls_lines, doc_idx=idx,
+                         src_paragraphs=src_paragraphs, tgt_paragraphs=tgt_paragraphs)
 
         test_alignments.append(stack[0]['final_alignments'])
         stack_list.append(stack)
