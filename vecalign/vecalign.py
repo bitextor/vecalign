@@ -329,8 +329,8 @@ def _main():
     del src_gen_kwargs, tgt_gen_kwargs
 
     # Load embeddings
-    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim, to_float32=False)
-    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim, to_float32=False)
+    src_sent2line, src_line_embeddings = read_in_embeddings(args.src_embed[0], args.src_embed[1], dim=args.embeddings_dim, to_float32=False, paragraphs=args.paragraph_identification)
+    tgt_sent2line, tgt_line_embeddings = read_in_embeddings(args.tgt_embed[0], args.tgt_embed[1], dim=args.embeddings_dim, to_float32=False, paragraphs=args.paragraph_identification)
 
     if args.src_embeddings_optimization_strategy:
         src_line_embeddings = embeddings.get_original_embedding_from_optimized(src_line_embeddings, strategy=args.src_embeddings_optimization_strategy)

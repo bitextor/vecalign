@@ -69,6 +69,9 @@ def _main():
     parser.add_argument('-n', '--num_overlaps', type=int, default=4,
                         help='Maximum number of allowed overlaps.')
 
+    parser.add_argument('--paragraph_identification', action='store_true',
+                        help='Enable paragraph identification. Identifier is expected to be in the 2nd column of the provided documents')
+
     args = parser.parse_args()
 
     if args.inputs[0] == "-":
@@ -77,7 +80,8 @@ def _main():
 
     overlap(output_file=args.output,
             num_overlaps=args.num_overlaps,
-            input_files=args.inputs)
+            input_files=args.inputs,
+            paragraphs=args.paragraph_identification)
 
 
 if __name__ == '__main__':

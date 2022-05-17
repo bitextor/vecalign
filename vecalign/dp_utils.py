@@ -47,7 +47,7 @@ def yield_overlaps(lines, num_overlaps):
 
 
 def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, decode_text_base64=False,
-                       embed_file_uniq=True, to_float32=True):
+                       embed_file_uniq=True, to_float32=True, paragraphs=False):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
@@ -56,7 +56,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
     sent2line = dict()
     dup = 0
 
-    def create_index(generator):
+    def create_index(generator, paragraphs=False):
         nonlocal sent2line
         nonlocal dup
 
@@ -69,6 +69,8 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
                 lines = base64.b64decode(line).decode("utf-8").strip().split("\n")
             else:
                 lines = line.split("\n")
+
+            lines = list(map(lambda l: l.split('\t')[0], lines)) if paragraphs else lines # Remove paragraphs
 
             for l in lines:
                 l = l.strip()
@@ -91,7 +93,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
     else:
         fin = open(text_file, 'rt', encoding="utf-8")
 
-    create_index(fin)
+    create_index(fin, paragraphs=paragraphs)
 
     fin.close()
 
