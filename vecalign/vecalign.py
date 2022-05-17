@@ -74,13 +74,28 @@ def generate_overlapping_and_embedding_files(overlapping_file, embedding_file, l
 def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
     src_urls_lines = None
     tgt_urls_lines = None
-    is_stdin = src[0] == "-" or src_urls[0]
-    generator = sys.stdin if is_stdin else zip(src, tgt, src_urls, tgt_urls)
+    full_stdin = src[0] == "-" and src_urls[0] == "-"
+    partial_stdin = src[0] == "-" or src_urls[0] == "-"
+    generator = sys.stdin
+
+    if not full_stdin:
+        if partial_stdin:
+            if src[0] == "-":
+                generator = zip(open(src, 'rt', encoding="utf-8").readlines(),
+                                open(tgt, 'rt', encoding="utf-8").readlines())
+            else:
+                generator = zip(open(src_urls, 'rt', encoding="utf-8").readlines(),
+                                open(tgt_urls, 'rt', encoding="utf-8").readlines())
+        else:
+            generator = zip(open(src, 'rt', encoding="utf-8").readlines(),
+                            open(tgt, 'rt', encoding="utf-8").readlines(),
+                            open(src_urls, 'rt', encoding="utf-8").readlines(),
+                            open(tgt_urls, 'rt', encoding="utf-8").readlines())
 
     for idx, line in enumerate(generator):
-        line = line.strip().split("\t") if is_stdin else line
+        line = line.strip().split("\t") if partial_stdin else line
 
-        if src[0] == "-" and src_urls[0] == "-":
+        if full_stdin:
             if len(line) != 4:
                 raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64<tab>src_url<tab>tgt_url')
         elif src[0] == "-":
@@ -90,16 +105,28 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
             if len(line) != 2:
                 raise Exception('unexpected format when reading from stdin: expected format is src_url<tab>tgt_url')
 
-        # Decode src and tgt doc
-        line[0] = base64.b64decode(line[0]).decode("utf-8").split("\n")
-        line[1] = base64.b64decode(line[1]).decode("utf-8").split("\n")
+        if partial_stdin and not full_stdin:
+            stdin_line = next(sys.stdin).strip().split('\t')
 
-        if src[0] != "-":
-            src_lines = open(line[0], 'rt', encoding="utf-8").readlines()
-            tgt_lines = open(line[1], 'rt', encoding="utf-8").readlines()
-        else:
-            src_lines = line[0]
-            tgt_lines = line[1]
+            if len(stdin_line) != 2:
+                if src[0] == "-":
+                    raise Exception('unexpected format when reading from stdin: expected format is src_doc_base64<tab>tgt_doc_base64')
+                else:
+                    raise Exception('unexpected format when reading from stdin: expected format is src_url<tab>tgt_url')
+
+            if src[0] != "-":
+                line.insert(0, stdin_line[0]) # src
+                line.insert(1, stdin_line[1]) # tgt
+            else:
+                line.append(stdin_line[0]) # src_url
+                line.append(stdin_line[1]) # tgt_url
+
+        src_lines = line[0]
+        tgt_lines = line[1]
+
+        # Decode src and tgt doc
+        src_lines = base64.b64decode(src_lines).decode("utf-8").split("\n")
+        tgt_lines = base64.b64decode(tgt_lines).decode("utf-8").split("\n")
 
         src_paragraphs = []
         tgt_paragraphs = []
@@ -112,16 +139,8 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
         src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
         tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
 
-        # Encode src and tgt docs
-        src_lines = list(map(lambda l: base64.b64encode(l.encode("utf-8")).decode("utf-8"), src_lines))
-        tgt_lines = list(map(lambda l: base64.b64encode(l.encode("utf-8")).decode("utf-8"), tgt_lines))
-
-        if src_urls[0] == "-":
-            src_urls_lines = [line[2 if src[0] == "-" else 0].strip()] * len(src_lines)
-            tgt_urls_lines = [line[3 if src[0] == "-" else 1].strip()] * len(tgt_lines)
-        else:
-            src_urls_lines = list(map(lambda line: line.strip()[:10000], open(line[2 if src[0] == "-" else 0][idx], encoding="utf-8").readlines()))
-            tgt_urls_lines = list(map(lambda line: line.strip()[:10000], open(line[3 if src[0] == "-" else 1][idx], encoding="utf-8").readlines()))
+        src_urls_lines = [line[2].strip()[:10000]] * len(src_lines)
+        tgt_urls_lines = [line[2].strip()[:10000]] * len(tgt_lines)
 
         yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_paragraphs, tgt_paragraphs
 
