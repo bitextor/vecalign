@@ -90,12 +90,16 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
             if len(line) != 2:
                 raise Exception('unexpected format when reading from stdin: expected format is src_url<tab>tgt_url')
 
+        # Decode src and tgt doc
+        line[0] = base64.b64decode(line[0]).decode("utf-8").split("\n")
+        line[1] = base64.b64decode(line[0]).decode("utf-8").split("\n")
+
         if src[0] != "-":
             src_lines = open(line[0], 'rt', encoding="utf-8").readlines()
             tgt_lines = open(line[1], 'rt', encoding="utf-8").readlines()
         else:
-            src_lines = base64.b64decode(line[0]).decode("utf-8").split("\n")
-            tgt_lines = base64.b64decode(line[1]).decode("utf-8").split("\n")
+            src_lines = line[0]
+            tgt_lines = line[1]
 
         src_paragraphs = []
         tgt_paragraphs = []
@@ -104,8 +108,13 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
             src_lines, src_paragraphs = list(zip(*map(lambda l: l.split('\t'), src_lines)))
             tgt_lines, tgt_paragraphs = list(zip(*map(lambda l: l.split('\t'), tgt_lines)))
 
+        # Remove empty docs
         src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
         tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
+
+        # Encode src and tgt docs
+        src_lines = list(map(lambda l: base64.b64encode(l.encode("utf-8")).decode("utf-8"), src_lines))
+        tgt_lines = list(map(lambda l: base64.b64encode(l.encode("utf-8")).decode("utf-8"), tgt_lines))
 
         if src_urls[0] == "-":
             src_urls_lines = [line[2 if src[0] == "-" else 0].strip()] * len(src_lines)

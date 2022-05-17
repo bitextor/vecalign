@@ -25,21 +25,16 @@ from vecalign.dp_utils import yield_overlaps
 
 def overlap(output_file, input_files, num_overlaps, paragraphs=False):
     output = set()
+    is_stdin = input_files[0] == "-"
 
-    if input_files[0] == "-":
-        # Read from stdin
+    for fin in (["aux"] if is_stdin else ([input_files] if not isinstance(input_files, list) else input_files)):
+        generator = sys.stdin if is_stdin else open(fin, 'rt', encoding="utf-8").readlines()
 
-        for lines in sys.stdin:
+        for lines in generator:
             lines = lines.strip()
             lines = base64.b64decode(lines).decode("utf-8").split("\n")
             lines = list(map(lambda l: l.split('\t')[0], lines)) if paragraphs else lines # Remove paragraphs
             lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), lines)))
-
-            for out_line in yield_overlaps(lines, num_overlaps):
-                output.add(out_line)
-    else:
-        for fin in [input_files] if not isinstance(input_files, list) else input_files:
-            lines = open(fin, 'rt', encoding="utf-8").readlines()
 
             for out_line in yield_overlaps(lines, num_overlaps):
                 output.add(out_line)
