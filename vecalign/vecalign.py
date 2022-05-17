@@ -92,7 +92,7 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
 
         # Decode src and tgt doc
         line[0] = base64.b64decode(line[0]).decode("utf-8").split("\n")
-        line[1] = base64.b64decode(line[0]).decode("utf-8").split("\n")
+        line[1] = base64.b64decode(line[1]).decode("utf-8").split("\n")
 
         if src[0] != "-":
             src_lines = open(line[0], 'rt', encoding="utf-8").readlines()
