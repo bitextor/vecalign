@@ -128,16 +128,16 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
         src_lines = base64.b64decode(src_lines).decode("utf-8").split("\n")
         tgt_lines = base64.b64decode(tgt_lines).decode("utf-8").split("\n")
 
+        # Remove empty docs
+        src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
+        tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
+
         src_paragraphs = []
         tgt_paragraphs = []
 
         if paragraphs:
             src_lines, src_paragraphs = list(zip(*map(lambda l: l.split('\t'), src_lines)))
             tgt_lines, tgt_paragraphs = list(zip(*map(lambda l: l.split('\t'), tgt_lines)))
-
-        # Remove empty docs
-        src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
-        tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
 
         src_urls_lines = [line[2].strip()[:10000]] * len(src_lines)
         tgt_urls_lines = [line[2].strip()[:10000]] * len(tgt_lines)
