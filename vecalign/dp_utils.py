@@ -233,7 +233,7 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
         header += f"src_idx{separator}trg_idx"
 
-    if scores:
+    if scores is not None:
         header += f"{separator}vecalign_score"
     if paragraphs:
         header += f"{separator}src_paragraph_id{separator}trg_paragraph_id"
@@ -241,7 +241,7 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
     print(header, file=file)
 
     for idx, (x, y) in enumerate(alignments):
-        if scores:
+        if scores is not None:
             s = scores[idx]
 
             if (threshold is not None and s < threshold):
@@ -267,7 +267,7 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
             print_value += f"{x}{separator}{y}"
 
-        if scores:
+        if scores is not None:
             print_value += f"{separator}{s:.6f}"
         if paragraphs:
             x_paragraphs = ' '.join([src_paragraphs[i] for i in x])
