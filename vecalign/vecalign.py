@@ -341,6 +341,7 @@ def _main():
 
     test_alignments = []
     stack_list = []
+    print_header = True
 
     # Process every pair of documents and, optionally, URLs
     for idx, (src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_paragraphs, tgt_paragraphs) in enumerate(process_docs_and_urls_files(args.src, args.tgt, args.src_urls, args.tgt_urls, paragraphs=args.paragraph_identification)):
@@ -381,7 +382,9 @@ def _main():
         print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'], threshold=args.threshold,
                          urls_format=args.urls_format, src_lines=src_lines, tgt_lines=tgt_lines,
                          src_urls=src_urls_lines, tgt_urls=tgt_urls_lines, doc_idx=idx,
-                         src_paragraphs=src_paragraphs, tgt_paragraphs=tgt_paragraphs)
+                         src_paragraphs=src_paragraphs, tgt_paragraphs=tgt_paragraphs, print_header=print_header)
+
+        print_header = False
 
         test_alignments.append(stack[0]['final_alignments'])
         stack_list.append(stack)

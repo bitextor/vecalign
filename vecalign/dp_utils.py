@@ -213,7 +213,7 @@ def read_alignments(fin):
 
 def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, urls_format=False,
                      src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None, doc_idx=None,
-                     src_paragraphs=None, tgt_paragraphs=None):
+                     src_paragraphs=None, tgt_paragraphs=None, print_header=False):
     paragraphs = False
     separator = ''
 
@@ -240,7 +240,8 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
     if paragraphs:
         header += f"{separator}src_paragraph_id{separator}trg_paragraph_id"
 
-    print(header, file=file)
+    if print_header:
+        print(header, file=file)
 
     for idx, (x, y) in enumerate(alignments):
         if scores is not None:
