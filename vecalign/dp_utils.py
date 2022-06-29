@@ -101,7 +101,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
     embeddings = []
 
     try:
-        for idx in range(len(sent2line)):
+        for _ in range(len(sent2line) + (0 if embed_file_uniq else dup)):
             embedding = np.load(embed_fd)
 
             embeddings.extend(embedding)
