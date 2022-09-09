@@ -140,7 +140,7 @@ def process_docs_and_urls_files(src, tgt, src_urls, tgt_urls, paragraphs=False):
             tgt_lines, tgt_paragraphs = list(zip(*map(lambda l: l.split('\t'), tgt_lines)))
 
         src_urls_lines = [line[2].strip()[:10000]] * len(src_lines)
-        tgt_urls_lines = [line[2].strip()[:10000]] * len(tgt_lines)
+        tgt_urls_lines = [line[3].strip()[:10000]] * len(tgt_lines)
 
         yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_paragraphs, tgt_paragraphs
 
