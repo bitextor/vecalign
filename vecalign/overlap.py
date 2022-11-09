@@ -23,7 +23,7 @@ import argparse
 from vecalign.dp_utils import yield_overlaps
 
 
-def overlap(output_file, input_files, num_overlaps, paragraphs=False):
+def overlap(output_file, input_files, num_overlaps):
     output = set()
     is_stdin = input_files[0] == "-"
 
@@ -33,7 +33,7 @@ def overlap(output_file, input_files, num_overlaps, paragraphs=False):
         for lines in generator:
             lines = lines.strip()
             lines = base64.b64decode(lines).decode("utf-8").split("\n")
-            lines = list(map(lambda l: l.split('\t')[0], lines)) if paragraphs else lines # Remove paragraphs
+            lines = [line.replace('\t', ' ') for line in lines]
             lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), lines)))
 
             for out_line in yield_overlaps(lines, num_overlaps):
@@ -69,9 +69,6 @@ def _main():
     parser.add_argument('-n', '--num_overlaps', type=int, default=4,
                         help='Maximum number of allowed overlaps.')
 
-    parser.add_argument('--paragraph_identification', action='store_true',
-                        help='Enable paragraph identification. Identifier is expected to be in the 2nd column of the provided documents')
-
     args = parser.parse_args()
 
     if args.inputs[0] == "-":
@@ -80,8 +77,7 @@ def _main():
 
     overlap(output_file=args.output,
             num_overlaps=args.num_overlaps,
-            input_files=args.inputs,
-            paragraphs=args.paragraph_identification)
+            input_files=args.inputs)
 
 
 if __name__ == '__main__':

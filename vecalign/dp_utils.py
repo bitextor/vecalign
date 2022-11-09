@@ -47,7 +47,7 @@ def yield_overlaps(lines, num_overlaps):
 
 
 def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, decode_text_base64=False,
-                       embed_file_uniq=True, to_float32=True, paragraphs=False):
+                       embed_file_uniq=True, to_float32=True):
     """
     Given a text file with candidate sentences and a corresponing embedding file,
        make a maping from candidate sentence to embedding index, 
@@ -56,7 +56,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
     sent2line = dict()
     dup = 0
 
-    def create_index(generator, paragraphs=False):
+    def create_index(generator):
         nonlocal sent2line
         nonlocal dup
 
@@ -70,7 +70,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
             else:
                 lines = line.split("\n")
 
-            lines = list(map(lambda l: l.split('\t')[0], lines)) if paragraphs else lines # Remove paragraphs
+            lines = [line.replace('\t', ' ') for line in lines]
 
             for l in lines:
                 l = l.strip()
@@ -93,7 +93,7 @@ def read_in_embeddings(text_file, embed_file, dim=768, exception_when_dup=True, 
     else:
         fin = open(text_file, 'rt', encoding="utf-8")
 
-    create_index(fin, paragraphs=paragraphs)
+    create_index(fin)
 
     fin.close()
 
@@ -213,19 +213,21 @@ def read_alignments(fin):
 
 def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, urls_format=False,
                      src_lines=None, tgt_lines=None, src_urls=None, tgt_urls=None, doc_idx=None,
-                     src_paragraphs=None, tgt_paragraphs=None, print_header=False):
-    paragraphs = False
+                     src_metadata=None, tgt_metadata=None, metadata_header_fields=None, print_header=False):
+    metadata = False
     separator = ''
 
-    if src_paragraphs and tgt_paragraphs:
-        paragraphs = True
     if urls_format:
         separator = '\t'
+
+        if src_metadata and tgt_metadata:
+            metadata = True
     else:
         separator = ':'
 
     # Print header
     header = ""
+    metadata_header = []
 
     if urls_format:
         header += f"src_url{separator}trg_url{separator}src_text{separator}trg_text"
@@ -237,8 +239,14 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
     if scores is not None:
         header += f"{separator}vecalign_score"
-    if paragraphs:
-        header += f"{separator}src_paragraph_id{separator}trg_paragraph_id"
+    if metadata:
+        if metadata and print_header and not metadata_header_fields:
+            raise Exception("Metadata header fields haven't been provided")
+
+        metadata_header = metadata_header_fields.split(',')
+
+        for header_field in metadata_header:
+            header += f"{separator}src_{header_field}{separator}trg_{header_field}"
 
     if print_header:
         print(header, file=file)
@@ -272,11 +280,17 @@ def print_alignments(alignments, scores=None, file=sys.stdout, threshold=None, u
 
         if scores is not None:
             print_value += f"{separator}{s:.6f}"
-        if paragraphs:
-            x_paragraphs = ' '.join([src_paragraphs[i] for i in x])
-            y_paragraphs = ' '.join([tgt_paragraphs[i] for i in y])
+        if metadata:
+            for idx2, meta in enumerate(src_metadata):
+                if len(metadata_header) != len(meta):
+                    raise Exception(f"Different length between metadata header and src metadata in match {idx + 1} "
+                                    f"and line {idx2 + 1}: {len(metadata_header)} vs {len(meta)}")
 
-            print_value += f"{separator}{x_paragraphs}{separator}{y_paragraphs}"
+            for idx2 in range(len(metadata_header)):
+                x_metadata = '+'.join([src_metadata[i][idx2] for i in x])
+                y_metadata = '+'.join([tgt_metadata[i][idx2] for i in y])
+
+                print_value += f"{separator}{x_metadata}{separator}{y_metadata}"
 
         print(print_value, file=file)
 
