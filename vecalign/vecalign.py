@@ -110,11 +110,15 @@ def process_docs_and_urls_files(src, tgt, src_urls=None, tgt_urls=None, src_meta
         src_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), src_lines)))
         tgt_lines = list(filter(lambda l: len(l) != 0, map(lambda ll: ll.strip(), tgt_lines)))
 
-        # Get URLs and metadata
+        # Get URLs
         src_urls_lines = [line[2].strip()[:10000]] * len(src_lines) if urls_format else []
         tgt_urls_lines = [line[3].strip()[:10000]] * len(tgt_lines) if urls_format else []
-        src_metadata_lines = list(map(lambda l: l.split('\t'), line[4 if urls_format else 2])) if metadata_format else []
-        tgt_metadata_lines = list(map(lambda l: l.split('\t'), line[4 if urls_format else 2])) if metadata_format else []
+
+        # Get metadata
+        src_metadata_lines = base64.b64decode(line[4 if urls_format else 2]).decode("utf-8").split('\n') if metadata_format else []
+        tgt_metadata_lines = base64.b64decode(line[5 if urls_format else 3]).decode("utf-8").split('\n') if metadata_format else []
+        src_metadata_lines = list(map(lambda l2: l2.strip().split('\t'), filter(lambda l: len(l.strip()) != 0, src_metadata_lines))) if metadata_format else []
+        tgt_metadata_lines = list(map(lambda l2: l2.strip().split('\t'), filter(lambda l: len(l.strip()) != 0, tgt_metadata_lines))) if metadata_format else []
 
         yield src_lines, tgt_lines, src_urls_lines, tgt_urls_lines, src_metadata_lines, tgt_metadata_lines
 
@@ -365,7 +369,7 @@ def _main():
         print_alignments(stack[0]['final_alignments'], stack[0]['alignment_scores'], threshold=args.threshold,
                          urls_format=urls_format, src_lines=src_lines, tgt_lines=tgt_lines,
                          src_urls=src_urls_lines, tgt_urls=tgt_urls_lines, doc_idx=idx,
-                         src_metadata=src_meta_lines, tgt_metadata=src_meta_lines,
+                         src_metadata=src_meta_lines, tgt_metadata=tgt_meta_lines,
                          metadata_header_fields=args.metadata_header_fields, print_header=print_header)
 
         print_header = False
