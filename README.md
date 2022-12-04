@@ -40,6 +40,7 @@ conda install -y -c anaconda cython
 conda install -y -c anaconda numpy
 # Pip packages
 pip install -r requirements.txt
+pip install mcerp 
 ```
 
 Note that Vecalign contains cython code, but there is no need to build it manually as it is compiled automatically by [pyximport](https://github.com/cython/cython/tree/master/pyximport).
@@ -133,8 +134,8 @@ The following assumes LASER is installed and the LASER environmental variable ha
 
 To embed the Bleualign files using LASER:
 ```
-$LASER/tasks/embed/embed.sh bleualign_data/overlaps.fr fr bleualign_data/overlaps.fr.emb
-$LASER/tasks/embed/embed.sh bleualign_data/overlaps.de de bleualign_data/overlaps.de.emb
+$LASER/tasks/embed/embed.sh bleualign_data/overlaps.fr bleualign_data/overlaps.fr.emb [fra]
+$LASER/tasks/embed/embed.sh bleualign_data/overlaps.de bleualign_data/overlaps.de.emb [deu]
 ```
 
 Note that LASER will not overwrite an embedding file if it exists, so you may need to run first `rm bleualign_data/overlaps.fr.emb bleualign_data/overlaps.de.emb`.
@@ -143,9 +144,17 @@ By default, the embeddings will be generated **automatically** when running `./v
 
 When using different embeddings, the dimensionality will be needed to be modified acording to the tool. In the case of LASER, the dimensionality is 1024, but in the case of Sentence Transformers is 768 (check out the option `--embeddings_dim` of `vecalign.py`).
 
+> Please always refer [here](https://github.com/facebookresearch/LASER/blob/main/tasks/embed/README.md) for the latest usage of this script. The usage may vary across the different versions of LASER.
+
+### Document Alignment
+
+[We propose](https://aclanthology.org/2020.emnlp-main.483) using Vecalign to rescore document alignment candidates, 
+in conjunction with candidate generation using a document embedding method that retains sentence order information.
+Example code for our document embedding method is provided [here](standalone_document_embedding_demo.py).
+
 ### Publications
 
-If you use Vecalign, please cite our [paper](https://www.aclweb.org/anthology/D19-1136.pdf):
+If you use Vecalign, please cite our [Vecalign paper](https://www.aclweb.org/anthology/D19-1136):
 
 ```
 @inproceedings{thompson-koehn-2019-vecalign,
@@ -162,3 +171,20 @@ If you use Vecalign, please cite our [paper](https://www.aclweb.org/anthology/D1
 }
 ```
 
+If you use the provided document embedding code or use Vecalign for document alignment, please cite our [document alignment paper](https://aclanthology.org/2020.emnlp-main.483):
+
+```
+@inproceedings{thompson-koehn-2020-exploiting,
+    title = "Exploiting Sentence Order in Document Alignment",
+    author = "Thompson, Brian  and
+      Koehn, Philipp",
+    booktitle = "Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+    month = nov,
+    year = "2020",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2020.emnlp-main.483",
+    doi = "10.18653/v1/2020.emnlp-main.483",
+    pages = "5997--6007",
+}
+```
